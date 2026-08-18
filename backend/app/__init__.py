@@ -1,0 +1,2 @@
+"""Avoria application package."""
+

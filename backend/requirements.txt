@@ -1,0 +1,11 @@
+fastapi>=0.139,<0.140
+uvicorn[standard]>=0.35,<1
+pydantic-settings>=2.10,<3
+SQLAlchemy>=2.0,<3
+aiosqlite>=0.21,<1
+redis>=6,<8
+rq>=2.2,<3
+
+# Test dependencies
+httpx2>=2.9,<3
+pytest>=8,<10

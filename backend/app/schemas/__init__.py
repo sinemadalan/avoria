@@ -1,0 +1,2 @@
+"""External API data contracts."""
+
