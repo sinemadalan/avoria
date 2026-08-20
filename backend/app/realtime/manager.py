@@ -2,7 +2,7 @@ from fastapi import WebSocket
 
 
 class WebSocketConnectionManager:
-    """Tracks API-client sockets only; worker communication will use Redis."""
+    """Tracks API-client sockets within the current API process."""
 
     def __init__(self) -> None:
         self._connections: dict[str, set[WebSocket]] = {}
@@ -21,4 +21,3 @@ class WebSocketConnectionManager:
 
 
 websocket_manager = WebSocketConnectionManager()
-

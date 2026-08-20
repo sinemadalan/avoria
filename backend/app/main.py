@@ -9,7 +9,6 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger
 from backend.app.database.session import create_database_schema, dispose_database
-from backend.app.infrastructure.redis import close_redis_connections
 from backend.app.infrastructure.storage import get_storage_service
 
 
@@ -25,7 +24,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     yield
 
-    await close_redis_connections()
     await dispose_database()
     logger.info("Avoria API stopped")
 
@@ -50,4 +48,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

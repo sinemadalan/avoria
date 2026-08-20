@@ -1,2 +1,1 @@
-"""RQ worker process entry points."""
-
+"""Celery media task definitions."""

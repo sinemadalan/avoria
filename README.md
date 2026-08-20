@@ -1,8 +1,8 @@
 # Avoria
 
-Avoria is a local-first media processing platform foundation built as a modular monolith with a separate RQ worker process.
+Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-This repository currently contains infrastructure only. Media upload, conversion, compression, analysis, progress reporting and processing jobs are intentionally not implemented yet.
+The backend supports media upload, FFprobe inspection, and user-selectable media conversion through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -11,18 +11,18 @@ This repository currently contains infrastructure only. Media upload, conversion
 - `backend/app/application`: use-case and application-service boundary.
 - `backend/app/core`: configuration, logging and shared application errors.
 - `backend/app/database`: SQLite engine, session and declarative model base. SQLite is reserved for authentication data.
-- `backend/app/infrastructure`: Redis/RQ and local filesystem adapters.
-- `backend/app/processing`: FFmpeg/FFprobe configuration boundary. Runners, parsers and operation handlers will live here later.
-- `backend/app/realtime`: WebSocket connection lifecycle. Worker events will later reach this layer through Redis, never process-local worker memory.
-- `backend/app/workers`: independent RQ worker process entry point.
+- `backend/app/infrastructure`: Celery job-state and local filesystem adapters.
+- `backend/app/processing`: FFprobe inspection, conversion compatibility, command building, local FFmpeg capability detection, and process execution.
+- `backend/app/realtime`: WebSocket connection lifecycle.
+- `backend/app/workers`: Celery media task orchestration.
 
-Redis holds queue data and, in later phases, temporary job state and progress. Media files and technical log files live under `data/`. Processing history is not persisted to SQLite.
+RabbitMQ transports tasks and Celery's transient RPC result backend exposes task state. Uploads, processing outputs, and technical log files live under `data/`.
 
 ## Requirements
 
 - Python 3.11 or newer
 - Node.js 22 or newer
-- Redis available at the configured URL
+- RabbitMQ 4.2.x running as a Windows service on `localhost:5672`
 - FFmpeg and FFprobe installed or configured with explicit executable paths
 
 Docker is not used.
@@ -48,19 +48,102 @@ python -m pip install -r backend\requirements.txt
 uvicorn backend.app.main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`; the health endpoint is `GET /api/v1/health`.
+The API is available at `http://127.0.0.1:8000`; Swagger is available at `http://127.0.0.1:8000/docs`.
 
-## Redis and RQ worker
+## RabbitMQ and Celery worker
 
-Start a local Redis server before starting the worker. Redis installation is intentionally left platform-specific; set `AVORIA_REDIS_URL` if it does not run at `redis://localhost:6379/0`.
+Start the RabbitMQ Windows service before creating jobs. The development defaults are guest/guest on `localhost:5672`, vhost `/`; the optional management UI is `http://localhost:15672`. RabbitMQ installation and management API integration are outside this repository.
 
 In a second activated terminal, from the repository root:
 
 ```powershell
-python -m backend.app.workers.main
+$env:PYTHONPATH = (Resolve-Path backend).Path
+celery -A app.core.celery_app:celery_app worker --loglevel=info --pool=solo
 ```
 
-On Windows the entry point uses RQ `SpawnWorker`; on other platforms it uses the standard RQ worker. The queue uses JSON serialization. No jobs are registered or enqueued in this phase.
+The `PYTHONPATH` line makes the requested short `app.core` module path available while commands are run from the repository root. The `--pool=solo` option is required for the Windows development worker. The queue and result payloads use JSON serialization, and the application job UUID is used as the Celery task ID.
+
+One worker processes one CPU-intensive conversion at a time. Start additional workers only deliberately: too many concurrent FFmpeg processes can exhaust CPU, RAM, and disk I/O.
+
+## Processing jobs
+
+Upload media through `POST /api/v1/media/upload`. The default upload allowlist is `mp4`, `mov`, `mkv`, `webm`, `avi`, `mp3`, `wav`, `m4a`, `aac`, `flac`, `ogg`, and `opus`. The upload response contains the `media_id` required by inspection and conversion requests.
+
+Inspect the uploaded file with:
+
+```text
+POST /api/v1/media/{media_id}/inspect
+```
+
+This uses FFprobe and returns format, duration, video stream, and audio stream metadata. The frontend can discover the conversion choices supported by the configured local FFmpeg build with:
+
+```text
+GET /api/v1/media/conversion-options
+```
+
+The default conversion is MP4 with H.264 video and AAC audio. Create it in Swagger with:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "convert"
+}
+```
+
+Or select an explicit conversion:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "convert",
+  "parameters": {
+    "container": "webm",
+    "video_codec": "vp9",
+    "audio_codec": "opus"
+  }
+}
+```
+
+`transcode` remains accepted as a temporary backward-compatible alias and uses the same typed conversion parameters and pipeline. New clients should use `convert`.
+
+### Conversion compatibility
+
+| Container | Video codecs | Audio codecs |
+| --- | --- | --- |
+| MP4 | h264, h265, av1, copy, none | aac, mp3, copy, none |
+| MKV | h264, h265, vp9, av1, copy, none | aac, mp3, opus, vorbis, flac, pcm, copy, none |
+| WebM | vp9, av1, copy, none | opus, vorbis, copy, none |
+| MOV | h264, h265, copy, none | aac, pcm, copy, none |
+| AVI | h264, copy, none | mp3, pcm, copy, none |
+| MP3 | none | mp3, copy |
+| WAV | none | pcm, copy |
+| FLAC | none | flac, copy |
+| OGG | none | opus, vorbis, flac, copy |
+| M4A | none | aac, copy |
+| Opus | none | opus, copy |
+
+API codec IDs are stable application values, not raw FFmpeg arguments. They are mapped internally to vetted encoders such as `h264 -> libx264`, `vp9 -> libvpx-vp9`, and `opus -> libopus`. AV1 uses `libaom-av1`; the capabilities endpoint omits encoders and muxers unavailable in the configured FFmpeg build, and the worker validates availability again before execution.
+
+`copy` performs stream copy when the input codec is compatible with the selected container. `none` omits that stream; disabling both streams is rejected. A missing audio stream is tolerated for video output. Audio-only input requires `video_codec: none`. Audio containers are supported by Convert as representation conversion; a future Extract Audio workflow may add track selection and editing-oriented behavior without duplicating this conversion engine.
+
+Only the primary video and primary audio streams are selected. Subtitle and data streams are deliberately omitted in this version.
+
+Create and query jobs with:
+
+```text
+POST /api/v1/jobs
+GET  /api/v1/jobs/{job_id}
+```
+
+Client-facing states are `queued`, `processing`, `completed`, and `failed`, mapped from Celery task states. The status response includes progress when the worker has reported it, output format on completion, and a safe error message on failure. Outputs are written atomically as `data/outputs/<job_id>.<container>` using partial files such as `<job_id>.part.webm`.
+
+The complete development flow is:
+
+```text
+Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
+```
+
+RabbitMQ must be running and a Celery worker must be ready before creating a conversion job. Upload, inspection, and conversion-options requests do not require a worker.
 
 ## Frontend setup
 
@@ -82,13 +165,4 @@ From the repository root with the virtual environment active:
 pytest backend\tests
 ```
 
-The tests do not require a running Redis server.
-
-## Planned extension points
-
-- FFmpeg runner, FFprobe adapter/parser and progress parser: `backend/app/processing`
-- Processing use-cases and operation handlers: `backend/app/application` and `backend/app/processing`
-- Runtime job state and progress transport: Redis adapters in `backend/app/infrastructure`
-- Worker-to-client progress: Redis to `backend/app/realtime` WebSockets
-- Privacy and HLS: new processing operations, not separate services
-
+The automated tests use fakes and do not require a running RabbitMQ service or FFmpeg executable.

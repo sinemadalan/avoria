@@ -22,18 +22,41 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     database_url: str = f"sqlite+aiosqlite:///{(PROJECT_ROOT / 'data' / 'avoria.db').as_posix()}"
-    redis_url: str = "redis://localhost:6379/0"
-    rq_queue_name: str = "media"
+    celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
+    celery_result_backend: str = "rpc://"
+    celery_task_default_queue: str = "media"
+    celery_result_expires_seconds: int = Field(default=24 * 60 * 60, gt=0)
 
     storage_root: Path = PROJECT_ROOT / "data" / "media"
+    upload_directory: Path = PROJECT_ROOT / "data" / "uploads"
+    output_directory: Path = PROJECT_ROOT / "data" / "outputs"
+    max_upload_size_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+    upload_chunk_size_bytes: int = Field(default=4 * 1024 * 1024, gt=0)
+    allowed_media_extensions: list[str] = Field(
+        default_factory=lambda: [
+            ".mp4",
+            ".mov",
+            ".mkv",
+            ".webm",
+            ".avi",
+            ".mp3",
+            ".wav",
+            ".m4a",
+            ".aac",
+            ".flac",
+            ".ogg",
+            ".opus",
+        ]
+    )
     log_directory: Path = PROJECT_ROOT / "data" / "logs"
     log_level: str = "INFO"
 
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
+    ffprobe_timeout_seconds: float = Field(default=30.0, gt=0)
+    ffmpeg_timeout_seconds: int = Field(default=6 * 60 * 60, gt=0)
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

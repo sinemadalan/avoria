@@ -1,0 +1,55 @@
+from dataclasses import dataclass
+from enum import Enum
+from typing import Protocol
+
+
+class JobOperation(str, Enum):
+    CONVERT = "convert"
+    TRANSCODE = "transcode"
+
+    @property
+    def canonical(self) -> "JobOperation":
+        return JobOperation.CONVERT
+
+
+class JobState(str, Enum):
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class JobRecord:
+    job_id: str
+    media_id: str
+    operation: JobOperation
+    status: JobState
+    output_id: str
+    output_format: str | None = None
+    progress: int | None = None
+    error: str | None = None
+
+
+class JobNotFoundError(Exception):
+    """Raised when a queue job does not exist or has expired."""
+
+
+class JobQueueUnavailableError(Exception):
+    """Raised when Celery cannot publish or retrieve a task."""
+
+
+class JobQueueStateError(Exception):
+    """Raised when a Celery task does not contain valid Avoria metadata."""
+
+
+class JobQueue(Protocol):
+    async def enqueue(
+        self,
+        job_id: str,
+        media_id: str,
+        operation: JobOperation,
+        parameters: dict[str, str],
+    ) -> None: ...
+
+    async def get(self, job_id: str) -> JobRecord: ...

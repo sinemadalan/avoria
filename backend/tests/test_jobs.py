@@ -1,0 +1,421 @@
+import asyncio
+from collections.abc import Iterator
+from pathlib import Path
+from uuid import UUID, uuid4
+
+import pytest
+from celery import states
+from fastapi.testclient import TestClient
+from kombu.exceptions import OperationalError
+
+from backend.app.application.ports.jobs import (
+    JobNotFoundError,
+    JobOperation,
+    JobQueueUnavailableError,
+    JobRecord,
+    JobState,
+)
+from backend.app.core.config import Settings, get_settings
+from backend.app.infrastructure import queue as queue_module
+from backend.app.infrastructure.queue import (
+    CeleryJobQueue,
+    get_job_queue,
+    normalize_job_status,
+)
+from backend.app.infrastructure.storage import LocalStorageService, get_storage_service
+from backend.app.main import app
+
+
+class FakeJobQueue:
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[str, str, JobOperation, dict[str, str]]] = []
+        self.records: dict[str, JobRecord] = {}
+        self.enqueue_error: Exception | None = None
+
+    async def enqueue(
+        self,
+        job_id: str,
+        media_id: str,
+        operation: JobOperation,
+        parameters: dict[str, str],
+    ) -> None:
+        if self.enqueue_error is not None:
+            raise self.enqueue_error
+        self.enqueued.append((job_id, media_id, operation, parameters))
+
+    async def get(self, job_id: str) -> JobRecord:
+        try:
+            return self.records[job_id]
+        except KeyError as exc:
+            raise JobNotFoundError from exc
+
+
+@pytest.fixture
+def jobs_client(
+    tmp_path: Path,
+) -> Iterator[tuple[TestClient, Path, Path, FakeJobQueue]]:
+    upload_directory = tmp_path / "uploads"
+    output_directory = tmp_path / "outputs"
+    storage = LocalStorageService(tmp_path / "media", upload_directory, output_directory)
+    storage.initialize()
+    settings = Settings(
+        _env_file=None,
+        storage_root=tmp_path / "media",
+        upload_directory=upload_directory,
+        output_directory=output_directory,
+        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
+        log_directory=tmp_path / "logs",
+    )
+    queue = FakeJobQueue()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_storage_service] = lambda: storage
+    app.dependency_overrides[get_job_queue] = lambda: queue
+
+    try:
+        with TestClient(app) as client:
+            yield client, upload_directory, output_directory, queue
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_job_enqueues_transcode_with_generated_job_id(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mov").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "transcode"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert str(UUID(body["job_id"])) == body["job_id"]
+    assert body["job_id"] != media_id
+    assert body == {
+        "job_id": body["job_id"],
+        "media_id": media_id,
+        "operation": "transcode",
+        "status": "queued",
+    }
+    assert queue.enqueued == [
+        (
+            body["job_id"],
+            media_id,
+            JobOperation.TRANSCODE,
+            {"container": "mp4", "video_codec": "h264", "audio_codec": "aac"},
+        )
+    ]
+
+
+def test_create_convert_job_supports_defaults_and_typed_parameters(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    default_response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "convert"},
+    )
+    webm_response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "convert",
+            "parameters": {
+                "container": "webm",
+                "video_codec": "vp9",
+                "audio_codec": "opus",
+            },
+        },
+    )
+
+    assert default_response.status_code == 202
+    assert default_response.json()["operation"] == "convert"
+    assert queue.enqueued[0][3] == {
+        "container": "mp4",
+        "video_codec": "h264",
+        "audio_codec": "aac",
+    }
+    assert webm_response.status_code == 202
+    assert queue.enqueued[1][3] == {
+        "container": "webm",
+        "video_codec": "vp9",
+        "audio_codec": "opus",
+    }
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"container": "invalid"},
+        {"video_codec": "mpeg2"},
+        {"audio_codec": "wma"},
+        {"container": "webm", "video_codec": "h264", "audio_codec": "opus"},
+        {"video_codec": "none", "audio_codec": "none"},
+    ],
+)
+def test_create_convert_job_rejects_invalid_parameters(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+    parameters: dict[str, str],
+) -> None:
+    client, _, _, queue = jobs_client
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": str(uuid4()),
+            "operation": "convert",
+            "parameters": parameters,
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+def test_create_job_rejects_invalid_media_id(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": "../../secret", "operation": "transcode"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_media_id"
+    assert queue.enqueued == []
+
+
+def test_create_job_rejects_missing_media(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": str(uuid4()), "operation": "transcode"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "media_not_found"
+    assert queue.enqueued == []
+
+
+def test_create_job_rejects_unsupported_operation(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": str(uuid4()), "operation": "resize"},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+def test_create_job_does_not_fake_queued_when_broker_is_unavailable(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+    queue.enqueue_error = JobQueueUnavailableError()
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "transcode"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "job_queue_unavailable"
+    assert queue.enqueued == []
+
+
+@pytest.mark.parametrize(
+    ("celery_status", "expected"),
+    [
+        (states.PENDING, JobState.QUEUED),
+        ("RECEIVED", JobState.QUEUED),
+        (states.STARTED, JobState.PROCESSING),
+        ("PROGRESS", JobState.PROCESSING),
+        (states.SUCCESS, JobState.COMPLETED),
+        (states.FAILURE, JobState.FAILED),
+        (states.REVOKED, JobState.FAILED),
+    ],
+)
+def test_celery_statuses_are_normalized(
+    celery_status: str, expected: JobState
+) -> None:
+    assert normalize_job_status(celery_status) is expected
+
+
+def test_completed_job_status_includes_output_reference(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.TRANSCODE,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_id": job_id,
+        "media_id": media_id,
+        "operation": "transcode",
+        "status": "completed",
+        "output": {"output_id": job_id},
+    }
+
+
+def test_failed_job_status_includes_safe_error(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.TRANSCODE,
+        status=JobState.FAILED,
+        output_id=job_id,
+        progress=0,
+        error="FFmpeg transcode failed",
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    assert response.json()["progress"] == 0
+    assert response.json()["error"] == "FFmpeg transcode failed"
+    assert "output" not in response.json()
+
+
+def test_missing_job_returns_404(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, _ = jobs_client
+
+    response = client.get(f"/api/v1/jobs/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "job_not_found"
+
+
+def test_celery_adapter_uses_application_job_id_and_primitive_payload() -> None:
+    class CapturingApp:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, object] = {}
+
+        def send_task(self, *args: object, **kwargs: object) -> object:
+            self.kwargs["name"] = args[0]
+            self.kwargs = kwargs
+            self.kwargs["name"] = args[0]
+            return object()
+
+    app = CapturingApp()
+    adapter = CeleryJobQueue(app)  # type: ignore[arg-type]
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    parameters = {"container": "webm", "video_codec": "vp9", "audio_codec": "opus"}
+    asyncio.run(
+        adapter.enqueue(job_id, media_id, JobOperation.CONVERT, parameters)
+    )
+
+    assert app.kwargs == {
+        "name": "avoria.media.convert",
+        "args": [media_id, "convert", parameters],
+        "task_id": job_id,
+    }
+
+
+def test_celery_adapter_maps_broker_connection_failure() -> None:
+    class UnavailableApp:
+        def send_task(self, *_args: object, **_kwargs: object) -> object:
+            raise OperationalError("unavailable")
+
+    adapter = CeleryJobQueue(UnavailableApp())  # type: ignore[arg-type]
+
+    with pytest.raises(JobQueueUnavailableError):
+        asyncio.run(
+            adapter.enqueue(
+                str(uuid4()),
+                str(uuid4()),
+                JobOperation.CONVERT,
+                {"container": "mp4", "video_codec": "h264", "audio_codec": "aac"},
+            )
+        )
+
+
+def test_celery_adapter_reads_progress_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class FakeResult:
+        state = "PROGRESS"
+        info = {
+            "media_id": media_id,
+            "operation": "transcode",
+            "output_id": job_id,
+            "format": "webm",
+            "progress": 37,
+        }
+
+    monkeypatch.setattr(
+        queue_module,
+        "AsyncResult",
+        lambda *_args, **_kwargs: FakeResult(),
+    )
+    adapter = CeleryJobQueue(object())  # type: ignore[arg-type]
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.PROCESSING
+    assert record.media_id == media_id
+    assert record.progress == 37
+    assert record.output_format == "webm"
+
+
+def test_celery_adapter_does_not_expose_raw_failure_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = str(uuid4())
+
+    class FakeResult:
+        state = states.FAILURE
+        info = OSError(r"Access denied: C:\\private\\media.mp4")
+
+    monkeypatch.setattr(queue_module, "AsyncResult", lambda *_args, **_kwargs: FakeResult())
+    adapter = CeleryJobQueue(object())  # type: ignore[arg-type]
+    adapter._remember(
+        job_id,
+        str(uuid4()),
+        JobOperation.CONVERT,
+        {"container": "mp4", "video_codec": "h264", "audio_codec": "aac"},
+    )
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.FAILED
+    assert record.error == "Media processing failed"
