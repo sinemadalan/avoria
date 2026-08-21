@@ -91,6 +91,16 @@ class CeleryJobQueue(JobQueue):
                 or None,
                 progress=int(progress) if progress is not None else None,
                 error=_error_message(state, info, metadata),
+                compression_level=_optional_string(metadata.get("compression_level")),
+                original_size=_optional_int(metadata.get("original_size")),
+                compressed_size=_optional_int(metadata.get("compressed_size")),
+                saved_bytes=_optional_int(metadata.get("saved_bytes")),
+                reduction_percentage=_optional_float(
+                    metadata.get("reduction_percentage")
+                ),
+                compression_effective=_optional_bool(
+                    metadata.get("compression_effective")
+                ),
             )
         except (TypeError, ValueError) as exc:
             raise JobQueueStateError from exc
@@ -136,6 +146,24 @@ def _error_message(state: str, info: Any, metadata: dict[str, Any]) -> str | Non
     if isinstance(info, BaseException):
         return "Media processing failed"
     return "Media processing failed"
+
+
+def _optional_string(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _optional_int(value: Any) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _optional_float(value: Any) -> float | None:
+    return float(value) if value is not None else None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None or isinstance(value, bool):
+        return value
+    raise ValueError("invalid boolean metadata")
 
 
 @lru_cache

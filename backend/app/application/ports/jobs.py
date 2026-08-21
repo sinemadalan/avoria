@@ -6,10 +6,13 @@ from typing import Protocol
 class JobOperation(str, Enum):
     CONVERT = "convert"
     TRANSCODE = "transcode"
+    COMPRESS = "compress"
 
     @property
     def canonical(self) -> "JobOperation":
-        return JobOperation.CONVERT
+        if self is JobOperation.TRANSCODE:
+            return JobOperation.CONVERT
+        return self
 
 
 class JobState(str, Enum):
@@ -29,6 +32,12 @@ class JobRecord:
     output_format: str | None = None
     progress: int | None = None
     error: str | None = None
+    compression_level: str | None = None
+    original_size: int | None = None
+    compressed_size: int | None = None
+    saved_bytes: int | None = None
+    reduction_percentage: float | None = None
+    compression_effective: bool | None = None
 
 
 class JobNotFoundError(Exception):

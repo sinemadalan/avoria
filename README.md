@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, and user-selectable media conversion through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, and video compression through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -105,6 +105,30 @@ Or select an explicit conversion:
 ```
 
 `transcode` remains accepted as a temporary backward-compatible alias and uses the same typed conversion parameters and pipeline. New clients should use `convert`.
+
+Create a video compression job through the same endpoint and queue:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "compress",
+  "parameters": {
+    "compression_level": "balanced"
+  }
+}
+```
+
+The supported API levels are `light`, `balanced` (the default), and `strong`. Compression preserves supported source containers: MP4 and MOV use H.264/AAC, MKV uses H.264/AAC in Matroska, WebM uses VP9/Opus, and AVI uses MPEG-4 Part 2/MP3. Encoder-specific quality values remain internal. Compression does not add resolution or frame-rate filters. Completed jobs include original/output sizes, saved bytes, reduction percentage, and whether the output is smaller. An output larger than its input is still a successful result.
+
+| Compression container | Video encoder | Audio encoder | Quality |
+| --- | --- | --- | --- |
+| MP4 | libx264 | aac | CRF 20 / 23 / 28 |
+| MOV | libx264 | aac | CRF 20 / 23 / 28 |
+| MKV | libx264 | aac | CRF 20 / 23 / 28 |
+| WebM | libvpx-vp9 | libopus | CRF 26 / 32 / 38 with `-b:v 0` |
+| AVI | mpeg4 | libmp3lame | `-q:v` 3 / 5 / 8 |
+
+The source suffix and normalized FFprobe format name must agree. Unsupported containers fail instead of silently falling back to MP4. Outputs are finalized atomically as `data/outputs/<job_id>.<source-extension>` from `<job_id>.part.<source-extension>`.
 
 ### Conversion compatibility
 

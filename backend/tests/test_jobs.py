@@ -149,6 +149,80 @@ def test_create_convert_job_supports_defaults_and_typed_parameters(
     }
 
 
+@pytest.mark.parametrize("level", ["light", "balanced", "strong"])
+def test_create_compress_job_supports_valid_levels(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+    level: str,
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "compress",
+            "parameters": {"compression_level": level},
+        },
+    )
+
+    assert response.status_code == 202
+    assert queue.enqueued[-1][2] is JobOperation.COMPRESS
+    assert queue.enqueued[-1][3] == {"compression_level": level}
+
+
+def test_create_compress_job_defaults_to_balanced_and_rejects_invalid_level(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    default_response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "compress"},
+    )
+    invalid_response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "compress",
+            "parameters": {"compression_level": "extreme"},
+        },
+    )
+
+    assert default_response.status_code == 202
+    assert queue.enqueued[-1][3] == {"compression_level": "balanced"}
+    assert invalid_response.status_code == 422
+    assert len(queue.enqueued) == 1
+
+
+@pytest.mark.parametrize("field", ["output_format", "output_container"])
+def test_create_compress_job_rejects_user_selected_output_format(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+    field: str,
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "compress",
+            "parameters": {
+                "compression_level": "balanced",
+                field: "webm",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
 @pytest.mark.parametrize(
     "parameters",
     [
@@ -284,6 +358,43 @@ def test_completed_job_status_includes_output_reference(
     }
 
 
+def test_completed_compression_status_includes_statistics(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.COMPRESS,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="webm",
+        progress=100,
+        compression_level="balanced",
+        original_size=100,
+        compressed_size=80,
+        saved_bytes=20,
+        reduction_percentage=20.0,
+        compression_effective=True,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {
+        "output_id": job_id,
+        "format": "webm",
+        "compression_level": "balanced",
+        "original_size": 100,
+        "compressed_size": 80,
+        "saved_bytes": 20,
+        "reduction_percentage": 20.0,
+        "compression_effective": True,
+    }
+
+
 def test_failed_job_status_includes_safe_error(
     jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
 ) -> None:
@@ -395,6 +506,45 @@ def test_celery_adapter_reads_progress_metadata(
     assert record.media_id == media_id
     assert record.progress == 37
     assert record.output_format == "webm"
+
+
+def test_celery_adapter_reads_completed_compression_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class FakeResult:
+        state = states.SUCCESS
+        info = {
+            "media_id": media_id,
+            "operation": "compress",
+            "output_id": job_id,
+            "format": "mp4",
+            "progress": 100,
+            "compression_level": "strong",
+            "original_size": 100,
+            "compressed_size": 120,
+            "saved_bytes": -20,
+            "reduction_percentage": -20.0,
+            "compression_effective": False,
+        }
+
+    monkeypatch.setattr(
+        queue_module,
+        "AsyncResult",
+        lambda *_args, **_kwargs: FakeResult(),
+    )
+    adapter = CeleryJobQueue(object())  # type: ignore[arg-type]
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.COMPLETED
+    assert record.operation is JobOperation.COMPRESS
+    assert record.compression_level == "strong"
+    assert record.saved_bytes == -20
+    assert record.reduction_percentage == -20.0
+    assert record.compression_effective is False
 
 
 def test_celery_adapter_does_not_expose_raw_failure_details(

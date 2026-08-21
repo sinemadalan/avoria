@@ -10,6 +10,15 @@ from backend.app.application.ports.storage import OutputTarget, StorageService
 from backend.app.core.config import get_settings
 from backend.app.core.celery_app import celery_app
 from backend.app.infrastructure.storage import get_storage_service
+from backend.app.processing.compression import (
+    CompressionProfile,
+    CompressionService,
+    CompressionSpec,
+    CompressionStatistics,
+    UnsupportedCompressionContainerError,
+    calculate_compression_statistics,
+    get_compression_service,
+)
 from backend.app.processing.conversion import (
     CONVERSION_CAPABILITIES,
     ConversionService,
@@ -41,9 +50,14 @@ class MediaTask(Task):
                 "media_id": media_id,
                 "operation": operation,
                 "output_id": task_id,
-                "format": str(parameters.get("container", "mp4")),
+                "format": (
+                    None
+                    if operation == JobOperation.COMPRESS.value
+                    else str(parameters.get("container", "mp4"))
+                ),
+                "compression_level": parameters.get("compression_level"),
                 "progress": 0,
-                "error": _public_failure_message(exc),
+                "error": _public_failure_message(exc, operation),
             },
         )
         logger.error(
@@ -62,9 +76,19 @@ def process_media_job(
     media_id: str,
     operation: str,
     parameters: dict[str, str],
-) -> dict[str, str | int]:
+) -> dict[str, Any]:
     job_id = str(self.request.id)
-    conversion = ConversionSpec.from_payload(parameters)
+    job_operation = JobOperation(operation)
+    conversion = (
+        ConversionSpec.from_payload(parameters)
+        if job_operation.canonical is JobOperation.CONVERT
+        else None
+    )
+    compression = (
+        CompressionSpec.from_payload(parameters)
+        if job_operation is JobOperation.COMPRESS
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -77,7 +101,8 @@ def process_media_job(
             "media_id": media_id,
             "operation": operation,
             "output_id": job_id,
-            "format": conversion.container.value,
+            "format": conversion.container.value if conversion else None,
+            "compression_level": compression.level.value if compression else None,
             "progress": 0,
         },
     )
@@ -87,10 +112,12 @@ def process_media_job(
     output = execute_media_job(
         job_id=job_id,
         media_id=media_id,
-        operation=JobOperation(operation),
+        operation=job_operation,
         storage=storage,
-        converter=get_conversion_service(),
+        converter=get_conversion_service() if conversion else None,
         conversion=conversion,
+        compressor=get_compression_service() if compression else None,
+        compression=compression,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -103,7 +130,7 @@ def process_media_job(
         **output,
         "media_id": media_id,
         "operation": operation,
-        "format": conversion.container.value,
+        "format": output["format"],
         "progress": 100,
     }
 
@@ -114,12 +141,16 @@ def execute_media_job(
     media_id: str,
     operation: JobOperation,
     storage: StorageService,
-    converter: ConversionService,
-    conversion: ConversionSpec,
+    converter: ConversionService | None,
+    conversion: ConversionSpec | None,
     allowed_extensions: list[str],
-) -> dict[str, str]:
+    compressor: CompressionService | None = None,
+    compression: CompressionSpec | None = None,
+) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
+    statistics: CompressionStatistics | None = None
+    compression_profile: CompressionProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -128,11 +159,31 @@ def execute_media_job(
     )
     try:
         input_path = asyncio.run(storage.resolve_upload(media_id, allowed_extensions))
-        extension = CONVERSION_CAPABILITIES[conversion.container].extension
-        target = storage.prepare_output(job_id, f".{extension}")
-        if operation.canonical is not JobOperation.CONVERT:
+        if operation.canonical is JobOperation.CONVERT:
+            if converter is None or conversion is None:
+                raise ValueError("Conversion dependencies are unavailable")
+            extension = CONVERSION_CAPABILITIES[conversion.container].extension
+        elif operation is JobOperation.COMPRESS:
+            if compressor is None or compression is None:
+                raise ValueError("Compression dependencies are unavailable")
+            compression_profile = compressor.resolve_profile(input_path)
+            extension = compression_profile.extension
+        else:
             raise ValueError("Unsupported processing operation")
-        converter.convert(input_path, target.temporary_path, conversion)
+        target = storage.prepare_output(job_id, f".{extension}")
+        if operation.canonical is JobOperation.CONVERT:
+            converter.convert(input_path, target.temporary_path, conversion)
+        else:
+            compressor.compress(
+                input_path,
+                target.temporary_path,
+                compression,
+                compression_profile,
+            )
+            statistics = calculate_compression_statistics(
+                input_path.stat().st_size,
+                target.temporary_path.stat().st_size,
+            )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)
@@ -156,11 +207,19 @@ def execute_media_job(
         target.output_id,
         duration_seconds,
     )
-    return {
+    result: dict[str, Any] = {
         "output_id": target.output_id,
         "filename": target.filename,
-        "format": conversion.container.value,
+        "format": extension,
     }
+    if operation is JobOperation.COMPRESS and compression is not None:
+        if statistics is None:
+            raise RuntimeError("Compression statistics are unavailable")
+        result.update(
+            compression_level=compression.level.value,
+            **statistics.to_payload(),
+        )
+    return result
 
 
 def _cleanup_partial(
@@ -176,7 +235,11 @@ def _cleanup_partial(
         logger.exception("Partial output cleanup failed job_id=%s", job_id)
 
 
-def _public_failure_message(exc: BaseException) -> str:
+def _public_failure_message(exc: BaseException, operation: str) -> str:
+    if isinstance(exc, UnsupportedCompressionContainerError):
+        return "Compression is not supported for this container"
+    if operation == JobOperation.COMPRESS.value:
+        return "Video compression failed"
     if isinstance(exc, InvalidConversionError):
         return str(exc)
     if isinstance(exc, FFmpegConversionError):

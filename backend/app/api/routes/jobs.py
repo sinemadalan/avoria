@@ -126,6 +126,12 @@ async def get_job_status(
         JobOutputReference(
             output_id=record.output_id,
             format=record.output_format,
+            compression_level=record.compression_level,
+            original_size=record.original_size,
+            compressed_size=record.compressed_size,
+            saved_bytes=record.saved_bytes,
+            reduction_percentage=record.reduction_percentage,
+            compression_effective=record.compression_effective,
         )
         if record.status is JobState.COMPLETED
         else None
