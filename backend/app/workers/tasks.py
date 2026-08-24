@@ -10,12 +10,17 @@ from backend.app.application.ports.storage import OutputTarget, StorageService
 from backend.app.core.config import get_settings
 from backend.app.core.celery_app import celery_app
 from backend.app.infrastructure.storage import get_storage_service
+from backend.app.processing.audio_extraction import (
+    AudioExtractionProfile,
+    AudioExtractionService,
+    AudioExtractionSpec,
+    get_audio_extraction_service,
+)
 from backend.app.processing.compression import (
     CompressionProfile,
     CompressionService,
     CompressionSpec,
     CompressionStatistics,
-    UnsupportedCompressionContainerError,
     calculate_compression_statistics,
     get_compression_service,
 )
@@ -24,7 +29,6 @@ from backend.app.processing.conversion import (
     ConversionService,
     ConversionSpec,
     FFmpegConversionError,
-    InvalidConversionError,
     get_conversion_service,
 )
 
@@ -42,24 +46,6 @@ class MediaTask(Task):
     ) -> None:
         media_id = str(args[0]) if args else "unknown"
         operation = str(args[1]) if len(args) > 1 else "convert"
-        parameters = args[2] if len(args) > 2 and isinstance(args[2], dict) else {}
-        self.update_state(
-            task_id=task_id,
-            state="FAILURE",
-            meta={
-                "media_id": media_id,
-                "operation": operation,
-                "output_id": task_id,
-                "format": (
-                    None
-                    if operation == JobOperation.COMPRESS.value
-                    else str(parameters.get("container", "mp4"))
-                ),
-                "compression_level": parameters.get("compression_level"),
-                "progress": 0,
-                "error": _public_failure_message(exc, operation),
-            },
-        )
         logger.error(
             "Processing task failed task_id=%s media_id=%s operation=%s error=%s",
             task_id,
@@ -89,6 +75,11 @@ def process_media_job(
         if job_operation is JobOperation.COMPRESS
         else None
     )
+    extraction = (
+        AudioExtractionSpec.from_payload(parameters)
+        if job_operation is JobOperation.EXTRACT_AUDIO
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -101,7 +92,11 @@ def process_media_job(
             "media_id": media_id,
             "operation": operation,
             "output_id": job_id,
-            "format": conversion.container.value if conversion else None,
+            "format": (
+                conversion.container.value
+                if conversion
+                else (extraction.format.value if extraction else None)
+            ),
             "compression_level": compression.level.value if compression else None,
             "progress": 0,
         },
@@ -118,6 +113,10 @@ def process_media_job(
         conversion=conversion,
         compressor=get_compression_service() if compression else None,
         compression=compression,
+        audio_extractor=(
+            get_audio_extraction_service() if extraction else None
+        ),
+        extraction=extraction,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -146,11 +145,14 @@ def execute_media_job(
     allowed_extensions: list[str],
     compressor: CompressionService | None = None,
     compression: CompressionSpec | None = None,
+    audio_extractor: AudioExtractionService | None = None,
+    extraction: AudioExtractionSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
     statistics: CompressionStatistics | None = None
     compression_profile: CompressionProfile | None = None
+    extraction_profile: AudioExtractionProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -168,12 +170,17 @@ def execute_media_job(
                 raise ValueError("Compression dependencies are unavailable")
             compression_profile = compressor.resolve_profile(input_path)
             extension = compression_profile.extension
+        elif operation is JobOperation.EXTRACT_AUDIO:
+            if audio_extractor is None or extraction is None:
+                raise ValueError("Audio extraction dependencies are unavailable")
+            extraction_profile = audio_extractor.resolve_profile(extraction)
+            extension = extraction_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
         if operation.canonical is JobOperation.CONVERT:
             converter.convert(input_path, target.temporary_path, conversion)
-        else:
+        elif operation is JobOperation.COMPRESS:
             compressor.compress(
                 input_path,
                 target.temporary_path,
@@ -183,6 +190,13 @@ def execute_media_job(
             statistics = calculate_compression_statistics(
                 input_path.stat().st_size,
                 target.temporary_path.stat().st_size,
+            )
+        else:
+            audio_extractor.extract(
+                input_path,
+                target.temporary_path,
+                extraction,
+                extraction_profile,
             )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
@@ -233,15 +247,3 @@ def _cleanup_partial(
         storage.cleanup_output(target)
     except Exception:
         logger.exception("Partial output cleanup failed job_id=%s", job_id)
-
-
-def _public_failure_message(exc: BaseException, operation: str) -> str:
-    if isinstance(exc, UnsupportedCompressionContainerError):
-        return "Compression is not supported for this container"
-    if operation == JobOperation.COMPRESS.value:
-        return "Video compression failed"
-    if isinstance(exc, InvalidConversionError):
-        return str(exc)
-    if isinstance(exc, FFmpegConversionError):
-        return "FFmpeg conversion failed"
-    return "Media processing failed"

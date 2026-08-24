@@ -7,6 +7,7 @@ class JobOperation(str, Enum):
     CONVERT = "convert"
     TRANSCODE = "transcode"
     COMPRESS = "compress"
+    EXTRACT_AUDIO = "extract_audio"
 
     @property
     def canonical(self) -> "JobOperation":

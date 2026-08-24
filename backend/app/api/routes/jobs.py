@@ -62,7 +62,7 @@ async def create_job(
             job_id,
             media_id,
             request.operation,
-            request.parameters.to_payload(),
+            request.to_payload(),
         )
     except JobQueueUnavailableError as exc:
         logger.error(

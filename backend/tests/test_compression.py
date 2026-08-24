@@ -28,7 +28,8 @@ from backend.app.processing.conversion import (
     OutputContainer,
 )
 from backend.app.processing.probe import MediaInspection, parse_ffprobe_payload
-from backend.app.workers.tasks import _public_failure_message, execute_media_job
+from backend.app.infrastructure.queue import _public_failure_message
+from backend.app.workers.tasks import execute_media_job
 
 
 VIDEO = parse_ffprobe_payload(
@@ -405,7 +406,10 @@ def test_ffmpeg_failure_cleans_container_specific_partial_output(
 def test_compression_failure_message_does_not_expose_ffmpeg_diagnostic() -> None:
     error = FFmpegConversionError(r"private input path: C:\\media\\secret.mov")
 
-    assert _public_failure_message(error, "compress") == "Video compression failed"
+    assert (
+        _public_failure_message(error, JobOperation.COMPRESS)
+        == "Video compression failed"
+    )
 
 
 def test_unsupported_container_fails_without_mp4_fallback(tmp_path: Path) -> None:
@@ -447,7 +451,7 @@ def test_unsupported_container_fails_without_mp4_fallback(tmp_path: Path) -> Non
     assert not (tmp_path / "outputs" / f"{job_id}.flv").exists()
     assert not (tmp_path / "outputs" / f"{job_id}.mp4").exists()
     assert (
-        _public_failure_message(error.value, "compress")
+        _public_failure_message(error.value, JobOperation.COMPRESS)
         == "Compression is not supported for this container"
     )
 

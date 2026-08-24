@@ -19,6 +19,9 @@ from backend.app.application.ports.jobs import (
     JobState,
 )
 from backend.app.core.celery_app import celery_app
+from backend.app.processing.audio_extraction import MediaHasNoAudioError
+from backend.app.processing.compression import UnsupportedCompressionContainerError
+from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
 
 TASK_NAME = "avoria.media.convert"
 _MAX_LOCAL_JOBS = 10_000
@@ -78,19 +81,20 @@ class CeleryJobQueue(JobQueue):
             if not media_id:
                 raise ValueError("missing media_id")
             progress = metadata.get("progress")
+            status = normalize_job_status(state)
             return JobRecord(
                 job_id=job_id,
                 media_id=media_id,
                 operation=operation,
-                status=normalize_job_status(state),
+                status=status,
                 output_id=str(metadata.get("output_id") or job_id),
-                output_format=str(
-                    metadata.get("format")
-                    or (local_metadata[2].get("container") if local_metadata else "")
-                )
-                or None,
-                progress=int(progress) if progress is not None else None,
-                error=_error_message(state, info, metadata),
+                output_format=_output_format(metadata, local_metadata),
+                progress=(
+                    int(progress)
+                    if progress is not None
+                    else (0 if status is JobState.FAILED else None)
+                ),
+                error=_error_message(state, info, metadata, operation),
                 compression_level=_optional_string(metadata.get("compression_level")),
                 original_size=_optional_int(metadata.get("original_size")),
                 compressed_size=_optional_int(metadata.get("compressed_size")),
@@ -137,14 +141,48 @@ def normalize_job_status(state: str) -> JobState:
     raise JobQueueStateError
 
 
-def _error_message(state: str, info: Any, metadata: dict[str, Any]) -> str | None:
+def _output_format(
+    metadata: dict[str, Any],
+    local_metadata: tuple[str, JobOperation, dict[str, str]] | None,
+) -> str | None:
+    value = metadata.get("format")
+    if value is None and local_metadata is not None:
+        operation = local_metadata[1]
+        value = (
+            local_metadata[2].get("format", "mp3")
+            if operation is JobOperation.EXTRACT_AUDIO
+            else local_metadata[2].get("container")
+        )
+    return str(value) if value else None
+
+
+def _error_message(
+    state: str,
+    info: Any,
+    metadata: dict[str, Any],
+    operation: JobOperation,
+) -> str | None:
     if state != states.FAILURE:
         return None
     message = metadata.get("error")
     if message:
         return str(message)
-    if isinstance(info, BaseException):
-        return "Media processing failed"
+    return _public_failure_message(info, operation)
+
+
+def _public_failure_message(info: Any, operation: JobOperation) -> str:
+    if isinstance(info, UnsupportedCompressionContainerError):
+        return "Compression is not supported for this container"
+    if isinstance(info, MediaHasNoAudioError):
+        return "The input does not contain an audio stream"
+    if operation is JobOperation.COMPRESS:
+        return "Video compression failed"
+    if operation is JobOperation.EXTRACT_AUDIO:
+        return "Audio extraction failed"
+    if isinstance(info, InvalidConversionError):
+        return str(info)
+    if isinstance(info, FFmpegConversionError):
+        return "FFmpeg conversion failed"
     return "Media processing failed"
 
 

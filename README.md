@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, and video compression through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, and multi-format audio extraction through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -63,11 +63,11 @@ celery -A app.core.celery_app:celery_app worker --loglevel=info --pool=solo
 
 The `PYTHONPATH` line makes the requested short `app.core` module path available while commands are run from the repository root. The `--pool=solo` option is required for the Windows development worker. The queue and result payloads use JSON serialization, and the application job UUID is used as the Celery task ID.
 
-One worker processes one CPU-intensive conversion at a time. Start additional workers only deliberately: too many concurrent FFmpeg processes can exhaust CPU, RAM, and disk I/O.
+One worker processes one CPU-intensive media job at a time. Start additional workers only deliberately: too many concurrent FFmpeg processes can exhaust CPU, RAM, and disk I/O.
 
 ## Processing jobs
 
-Upload media through `POST /api/v1/media/upload`. The default upload allowlist is `mp4`, `mov`, `mkv`, `webm`, `avi`, `mp3`, `wav`, `m4a`, `aac`, `flac`, `ogg`, and `opus`. The upload response contains the `media_id` required by inspection and conversion requests.
+Upload media through `POST /api/v1/media/upload`. The default upload allowlist is `mp4`, `mov`, `mkv`, `webm`, `avi`, `mp3`, `wav`, `m4a`, `aac`, `flac`, `ogg`, and `opus`. The upload response contains the `media_id` required by inspection and processing requests.
 
 Inspect the uploaded file with:
 
@@ -120,6 +120,35 @@ Create a video compression job through the same endpoint and queue:
 
 The supported API levels are `light`, `balanced` (the default), and `strong`. Compression preserves supported source containers: MP4 and MOV use H.264/AAC, MKV uses H.264/AAC in Matroska, WebM uses VP9/Opus, and AVI uses MPEG-4 Part 2/MP3. Encoder-specific quality values remain internal. Compression does not add resolution or frame-rate filters. Completed jobs include original/output sizes, saved bytes, reduction percentage, and whether the output is smaller. An output larger than its input is still a successful result.
 
+Extract the first audio stream as MP3 (the default), WAV, FLAC, M4A, Opus, or OGG:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "extract_audio",
+  "format": "ogg"
+}
+```
+
+Omitting `format` preserves the MP3 default. MP3 uses `libmp3lame` at
+application-controlled quality 2; WAV uses 16-bit PCM (`pcm_s16le`); FLAC uses
+the lossless `flac` encoder without user-selectable tuning; M4A uses AAC at a
+fixed 192 kbps; Opus uses `libopus` at a fixed 128 kbps in an Ogg container;
+OGG uses `libvorbis` at application-controlled quality 5. Opus remains a
+separate `.opus` output. Raw AAC/ADTS output is not supported. The worker uses
+FFprobe to reject inputs without an audio stream before starting FFmpeg.
+Completed outputs are finalized atomically under `data/outputs/` with the
+selected `.mp3`, `.wav`, `.flac`, `.m4a`, `.opus`, or `.ogg` extension.
+
+| Extraction format | Extension | Encoder | Muxer | Application policy |
+| --- | --- | --- | --- | --- |
+| MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |
+| WAV | `.wav` | `pcm_s16le` | `wav` | 16-bit PCM |
+| FLAC | `.flac` | `flac` | `flac` | Lossless |
+| M4A | `.m4a` | `aac` | `ipod` | 192 kbps |
+| Opus | `.opus` | `libopus` | `ogg` | 128 kbps |
+| OGG | `.ogg` | `libvorbis` | `ogg` | Quality 5 |
+
 | Compression container | Video encoder | Audio encoder | Quality |
 | --- | --- | --- | --- |
 | MP4 | libx264 | aac | CRF 20 / 23 / 28 |
@@ -148,7 +177,7 @@ The source suffix and normalized FFprobe format name must agree. Unsupported con
 
 API codec IDs are stable application values, not raw FFmpeg arguments. They are mapped internally to vetted encoders such as `h264 -> libx264`, `vp9 -> libvpx-vp9`, and `opus -> libopus`. AV1 uses `libaom-av1`; the capabilities endpoint omits encoders and muxers unavailable in the configured FFmpeg build, and the worker validates availability again before execution.
 
-`copy` performs stream copy when the input codec is compatible with the selected container. `none` omits that stream; disabling both streams is rejected. A missing audio stream is tolerated for video output. Audio-only input requires `video_codec: none`. Audio containers are supported by Convert as representation conversion; a future Extract Audio workflow may add track selection and editing-oriented behavior without duplicating this conversion engine.
+`copy` performs stream copy when the input codec is compatible with the selected container. `none` omits that stream; disabling both streams is rejected. A missing audio stream is tolerated for video output. Audio-only input requires `video_codec: none`. Audio containers are supported by Convert as representation conversion; Extract Audio remains a separate, policy-controlled workflow and currently selects only the first audio stream.
 
 Only the primary video and primary audio streams are selected. Subtitle and data streams are deliberately omitted in this version.
 
@@ -161,13 +190,19 @@ GET  /api/v1/jobs/{job_id}
 
 Client-facing states are `queued`, `processing`, `completed`, and `failed`, mapped from Celery task states. The status response includes progress when the worker has reported it, output format on completion, and a safe error message on failure. Outputs are written atomically as `data/outputs/<job_id>.<container>` using partial files such as `<job_id>.part.webm`.
 
-The complete development flow is:
+The conversion development flow is:
 
 ```text
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-RabbitMQ must be running and a Celery worker must be ready before creating a conversion job. Upload, inspection, and conversion-options requests do not require a worker.
+Audio extraction and compression use the same processing queue without the conversion-options step:
+
+```text
+Upload -> Inspect -> Create processing job -> Poll job status -> Check output
+```
+
+RabbitMQ must be running and a Celery worker must be ready before creating any processing job. Upload, inspection, and conversion-options requests do not require a worker.
 
 ## Frontend setup
 

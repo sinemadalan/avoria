@@ -24,6 +24,7 @@ from backend.app.infrastructure.queue import (
 )
 from backend.app.infrastructure.storage import LocalStorageService, get_storage_service
 from backend.app.main import app
+from backend.app.processing.audio_extraction import MediaHasNoAudioError
 
 
 class FakeJobQueue:
@@ -196,6 +197,114 @@ def test_create_compress_job_defaults_to_balanced_and_rejects_invalid_level(
     assert queue.enqueued[-1][3] == {"compression_level": "balanced"}
     assert invalid_response.status_code == 422
     assert len(queue.enqueued) == 1
+
+
+def test_create_extract_audio_job_accepts_no_parameters(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "extract_audio"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["operation"] == "extract_audio"
+    assert queue.enqueued == [
+        (
+            response.json()["job_id"],
+            media_id,
+            JobOperation.EXTRACT_AUDIO,
+            {"format": "mp3"},
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "output_format",
+    ["mp3", "wav", "flac", "m4a", "opus", "ogg"],
+)
+def test_create_extract_audio_job_accepts_supported_format(
+    output_format: str,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "extract_audio",
+            "format": output_format,
+        },
+    )
+
+    assert response.status_code == 202
+    assert queue.enqueued[-1][3] == {"format": output_format}
+
+
+@pytest.mark.parametrize("output_format", ["aac", "vorbis", "abc"])
+def test_create_extract_audio_job_rejects_unsupported_format(
+    output_format: str,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "extract_audio",
+            "format": output_format,
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"format": "wav"},
+        {"codec": "pcm_s16le"},
+        {"encoder": "aac"},
+        {"bitrate": "320k"},
+        {"quality": 1},
+        {"sample_rate": 48000},
+        {"channels": 1},
+        {"profile": "aac_low"},
+        {"compression_level": 5},
+        {"application": "audio"},
+        {"vbr": "on"},
+    ],
+)
+def test_create_extract_audio_job_rejects_parameters(
+    parameters: dict[str, object],
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "extract_audio",
+            "parameters": parameters,
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
 
 
 @pytest.mark.parametrize("field", ["output_format", "output_container"])
@@ -395,6 +504,138 @@ def test_completed_compression_status_includes_statistics(
     }
 
 
+def test_completed_audio_extraction_status_reports_mp3(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="mp3",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "mp3"}
+
+
+def test_completed_wav_extraction_status_reports_wav(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="wav",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "wav"}
+
+
+def test_completed_flac_extraction_status_reports_flac(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="flac",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "flac"}
+
+
+def test_completed_m4a_extraction_status_reports_m4a(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="m4a",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "m4a"}
+
+
+def test_completed_opus_extraction_status_reports_opus(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="opus",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "opus"}
+
+
+def test_completed_ogg_extraction_status_reports_ogg(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="ogg",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["output"] == {"output_id": job_id, "format": "ogg"}
+
+
 def test_failed_job_status_includes_safe_error(
     jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
 ) -> None:
@@ -418,6 +659,36 @@ def test_failed_job_status_includes_safe_error(
     assert response.json()["progress"] == 0
     assert response.json()["error"] == "FFmpeg transcode failed"
     assert "output" not in response.json()
+
+
+def test_failed_audio_extraction_status_is_controlled(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.EXTRACT_AUDIO,
+        status=JobState.FAILED,
+        output_id=job_id,
+        output_format="mp3",
+        progress=0,
+        error="Audio extraction failed",
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_id": job_id,
+        "media_id": media_id,
+        "operation": "extract_audio",
+        "status": "failed",
+        "progress": 0,
+        "error": "Audio extraction failed",
+    }
 
 
 def test_missing_job_returns_404(
@@ -569,3 +840,53 @@ def test_celery_adapter_does_not_expose_raw_failure_details(
 
     assert record.status is JobState.FAILED
     assert record.error == "Media processing failed"
+
+
+def test_celery_adapter_maps_audio_exception_to_safe_failed_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class FakeResult:
+        state = states.FAILURE
+        info = RuntimeError(r"private path: C:\\uploads\\silent.mp4")
+
+    monkeypatch.setattr(queue_module, "AsyncResult", lambda *_args, **_kwargs: FakeResult())
+    adapter = CeleryJobQueue(object())  # type: ignore[arg-type]
+    adapter._remember(job_id, media_id, JobOperation.EXTRACT_AUDIO, {})
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.FAILED
+    assert record.media_id == media_id
+    assert record.operation is JobOperation.EXTRACT_AUDIO
+    assert record.output_format == "mp3"
+    assert record.progress == 0
+    assert record.error == "Audio extraction failed"
+
+
+def test_celery_adapter_maps_no_audio_to_controlled_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class FakeResult:
+        state = states.FAILURE
+        info = MediaHasNoAudioError("technical detail")
+
+    monkeypatch.setattr(queue_module, "AsyncResult", lambda *_args, **_kwargs: FakeResult())
+    adapter = CeleryJobQueue(object())  # type: ignore[arg-type]
+    adapter._remember(
+        job_id,
+        media_id,
+        JobOperation.EXTRACT_AUDIO,
+        {"format": "wav"},
+    )
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.FAILED
+    assert record.output_format == "wav"
+    assert record.error == "The input does not contain an audio stream"
