@@ -1,6 +1,15 @@
 from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 from backend.app.application.ports.jobs import JobOperation, JobState
 from backend.app.processing.audio_extraction import (
@@ -16,8 +25,9 @@ from backend.app.processing.conversion import (
     VideoCodec,
     validate_compatibility,
 )
-from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
+from backend.app.processing.replace_audio import ReplaceAudioSpec
 from backend.app.processing.speed import InvalidSpeedError, SpeedSpec
+from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
 from backend.app.processing.volume import InvalidVolumeError, VolumeSpec
 
 
@@ -137,6 +147,26 @@ class SpeedParameters(BaseModel):
         return self.to_spec().to_payload()
 
 
+class ReplaceAudioParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    audio_media_id: StrictStr
+
+    @field_validator("audio_media_id")
+    @classmethod
+    def validate_audio_media_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("audio_media_id must be a valid UUID") from exc
+
+    def to_spec(self) -> ReplaceAudioSpec:
+        return ReplaceAudioSpec(audio_media_id=self.audio_media_id)
+
+    def to_payload(self) -> dict[str, str]:
+        return self.to_spec().to_payload()
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -150,6 +180,7 @@ class JobCreateRequest(BaseModel):
         | VolumeParameters
         | TrimParameters
         | SpeedParameters
+        | ReplaceAudioParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -175,6 +206,11 @@ class JobCreateRequest(BaseModel):
             model = TrimParameters
         elif operation in {JobOperation.SPEED, JobOperation.SPEED.value}:
             model = SpeedParameters
+        elif operation in {
+            JobOperation.REPLACE_AUDIO,
+            JobOperation.REPLACE_AUDIO.value,
+        }:
+            model = ReplaceAudioParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -193,6 +229,8 @@ class JobCreateRequest(BaseModel):
             expected = TrimParameters
         elif self.operation is JobOperation.SPEED:
             expected = SpeedParameters
+        elif self.operation is JobOperation.REPLACE_AUDIO:
+            expected = ReplaceAudioParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):

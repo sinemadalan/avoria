@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, status
 
 from backend.app.application.ports.jobs import (
     JobNotFoundError,
+    JobOperation,
     JobQueue,
     JobQueueStateError,
     JobQueueUnavailableError,
@@ -56,13 +57,39 @@ async def create_job(
             status_code=status.HTTP_409_CONFLICT,
         ) from exc
 
+    payload = request.to_payload()
+    if request.operation is JobOperation.REPLACE_AUDIO:
+        audio_media_id = payload["audio_media_id"]
+        try:
+            await storage.resolve_upload(
+                audio_media_id,
+                settings.allowed_media_extensions,
+            )
+        except InvalidMediaIdError as exc:
+            raise AppError(
+                "Invalid external audio media ID",
+                code="invalid_audio_media_id",
+            ) from exc
+        except MediaNotFoundError as exc:
+            raise AppError(
+                "External audio media file was not found",
+                code="audio_media_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            ) from exc
+        except AmbiguousMediaError as exc:
+            raise AppError(
+                "Multiple media files match the external audio identifier",
+                code="ambiguous_audio_media",
+                status_code=status.HTTP_409_CONFLICT,
+            ) from exc
+
     job_id = str(uuid4())
     try:
         await job_queue.enqueue(
             job_id,
             media_id,
             request.operation,
-            request.to_payload(),
+            payload,
         )
     except JobQueueUnavailableError as exc:
         logger.error(

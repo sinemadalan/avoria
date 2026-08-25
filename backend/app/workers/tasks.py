@@ -6,7 +6,11 @@ from typing import Any
 from celery import Task
 
 from backend.app.application.ports.jobs import JobOperation
-from backend.app.application.ports.storage import OutputTarget, StorageService
+from backend.app.application.ports.storage import (
+    MediaNotFoundError,
+    OutputTarget,
+    StorageService,
+)
 from backend.app.core.config import get_settings
 from backend.app.core.celery_app import celery_app
 from backend.app.infrastructure.storage import get_storage_service
@@ -32,6 +36,13 @@ from backend.app.processing.conversion import (
     get_conversion_service,
 )
 from backend.app.processing.mute import MuteService, get_mute_service
+from backend.app.processing.replace_audio import (
+    ExternalAudioMediaNotFoundError,
+    ReplaceAudioProfile,
+    ReplaceAudioService,
+    ReplaceAudioSpec,
+    get_replace_audio_service,
+)
 from backend.app.processing.speed import (
     SpeedProfile,
     SpeedService,
@@ -109,6 +120,11 @@ def process_media_job(
         if job_operation is JobOperation.SPEED
         else None
     )
+    replace_audio = (
+        ReplaceAudioSpec.from_payload(parameters)
+        if job_operation is JobOperation.REPLACE_AUDIO
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -155,6 +171,8 @@ def process_media_job(
         trim=trim,
         speed_changer=get_speed_service() if speed else None,
         speed=speed,
+        audio_replacer=get_replace_audio_service() if replace_audio else None,
+        replace_audio=replace_audio,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -192,6 +210,8 @@ def execute_media_job(
     trim: TrimSpec | None = None,
     speed_changer: SpeedService | None = None,
     speed: SpeedSpec | None = None,
+    audio_replacer: ReplaceAudioService | None = None,
+    replace_audio: ReplaceAudioSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -202,6 +222,8 @@ def execute_media_job(
     volume_profile: CompressionProfile | None = None
     trim_profile: TrimProfile | None = None
     speed_profile: SpeedProfile | None = None
+    replace_audio_profile: ReplaceAudioProfile | None = None
+    external_audio_path = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -244,6 +266,23 @@ def execute_media_job(
                 raise ValueError("Speed dependencies are unavailable")
             speed_profile = speed_changer.resolve_profile(input_path)
             extension = speed_profile.extension
+        elif operation is JobOperation.REPLACE_AUDIO:
+            if audio_replacer is None or replace_audio is None:
+                raise ValueError("Replace-audio dependencies are unavailable")
+            try:
+                external_audio_path = asyncio.run(
+                    storage.resolve_upload(
+                        replace_audio.audio_media_id,
+                        allowed_extensions,
+                    )
+                )
+            except MediaNotFoundError as exc:
+                raise ExternalAudioMediaNotFoundError from exc
+            replace_audio_profile = audio_replacer.resolve_profile(
+                input_path,
+                external_audio_path,
+            )
+            extension = replace_audio_profile.target.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -278,12 +317,19 @@ def execute_media_job(
             )
         elif operation is JobOperation.TRIM:
             trimmer.trim(input_path, target.temporary_path, trim, trim_profile)
-        else:
+        elif operation is JobOperation.SPEED:
             speed_changer.change_speed(
                 input_path,
                 target.temporary_path,
                 speed,
                 speed_profile,
+            )
+        else:
+            audio_replacer.replace(
+                input_path,
+                external_audio_path,
+                target.temporary_path,
+                replace_audio_profile,
             )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:

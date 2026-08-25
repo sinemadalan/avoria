@@ -1195,3 +1195,84 @@ def test_celery_adapter_maps_no_audio_to_controlled_error(
     assert record.status is JobState.FAILED
     assert record.output_format == "wav"
     assert record.error == "The input does not contain an audio stream"
+
+
+def test_create_replace_audio_job_accepts_two_original_uploads(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    video_id, audio_id = str(uuid4()), str(uuid4())
+    (upload_directory / f"{video_id}.mp4").write_bytes(b"video-upload")
+    (upload_directory / f"{audio_id}.mp3").write_bytes(b"audio-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": video_id,
+            "operation": "replace_audio",
+            "parameters": {"audio_media_id": audio_id},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["operation"] == "replace_audio"
+    assert queue.enqueued[-1][1:] == (
+        video_id,
+        JobOperation.REPLACE_AUDIO,
+        {"audio_media_id": audio_id},
+    )
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {},
+        {"audio_media_id": None},
+        {"audio_media_id": ""},
+        {"audio_media_id": "not-a-uuid"},
+        {"audio_media_id": "../../audio.mp3"},
+        {"audio_media_id": 123},
+        {"audio_media_id": True},
+        {"audio_media_id": str(uuid4()), "codec": "aac"},
+    ],
+)
+def test_create_replace_audio_job_rejects_invalid_parameters_before_queue(
+    parameters: dict[str, object],
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    video_id = str(uuid4())
+    (upload_directory / f"{video_id}.mp4").write_bytes(b"video-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": video_id,
+            "operation": "replace_audio",
+            "parameters": parameters,
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+def test_create_replace_audio_job_rejects_missing_external_upload(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    video_id = str(uuid4())
+    (upload_directory / f"{video_id}.mp4").write_bytes(b"video-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": video_id,
+            "operation": "replace_audio",
+            "parameters": {"audio_media_id": str(uuid4())},
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "audio_media_not_found"
+    assert queue.enqueued == []

@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, frame-accurate trim/cut, and playback speed control through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, frame-accurate trim/cut, playback speed control, and external audio replacement through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -212,6 +212,33 @@ streams are re-encoded with the existing centralized video/audio profiles.
 Subtitle and data streams are omitted. Speed is a standalone operation: trim,
 mute, volume, compression, and processing pipelines are not prerequisites.
 
+Replace every existing target-video audio stream with one uploaded audio file:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "replace_audio",
+  "parameters": {
+    "audio_media_id": "7a6d48cb-56f7-4d43-a06c-e84fdf1f9ad1"
+  }
+}
+```
+
+`audio_media_id` must identify a separate, supported audio-only upload; video
+files are not accepted as the external source. The target may contain audio or
+be video-only, but an audio-only target is rejected. The primary target video
+is stream-copied without re-encoding, all of its old audio streams are omitted,
+and the first external audio stream becomes the output's only audio stream. The
+target video selects the MP4, MOV, MKV, WebM, or AVI output container and the
+existing centralized profile selects its compatible audio encoder.
+
+The target video is always the duration master. Longer external audio is cut at
+the video duration; shorter external audio plays once and is deterministically
+padded with silence through the end of the video. Audio looping is deliberately
+not supported in this phase. `replace_audio` is standalone and needs only the
+original video and audio uploads; mute, extraction, trim, speed, and other
+operations are not prerequisites.
+
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |
 | MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |
@@ -268,7 +295,7 @@ The conversion development flow is:
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-Audio extraction, compression, mute, volume adjustment, trim, and speed control use the same processing queue without the conversion-options step:
+Audio extraction, compression, mute, volume adjustment, trim, speed control, and external audio replacement use the same processing queue without the conversion-options step:
 
 ```text
 Upload -> Inspect -> Create processing job -> Poll job status -> Check output

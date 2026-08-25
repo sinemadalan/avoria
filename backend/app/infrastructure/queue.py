@@ -26,6 +26,14 @@ from backend.app.processing.audio_extraction import (
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
 from backend.app.processing.mute import MediaHasNoVideoError
+from backend.app.processing.replace_audio import (
+    ExternalAudioInspectionError,
+    ExternalAudioMediaNotFoundError,
+    ExternalMediaHasVideoError,
+    InvalidReplaceAudioDurationError,
+    ReplaceAudioTargetHasNoVideoError,
+    TargetMediaInspectionError,
+)
 from backend.app.processing.speed import InvalidSpeedError, MediaHasNoSpeedStreamError
 from backend.app.processing.probe import (
     FFprobeExecutableNotFoundError,
@@ -191,6 +199,8 @@ def _error_message(
 
 def _public_failure_message(info: Any, operation: JobOperation) -> str:
     if isinstance(info, UnsupportedCompressionContainerError):
+        if operation is JobOperation.REPLACE_AUDIO:
+            return "Audio replacement is not supported for the target container"
         if operation is JobOperation.MUTE:
             return "Video mute is not supported for this container"
         if operation is JobOperation.VOLUME:
@@ -201,11 +211,27 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
             return "Speed is not supported for this container"
         return "Compression is not supported for this container"
     if isinstance(info, UnsupportedAudioContainerError):
+        if operation is JobOperation.REPLACE_AUDIO:
+            return "The external audio format is not supported"
         if operation is JobOperation.SPEED:
             return "Speed is not supported for this container"
         return "Trim is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
+        if operation is JobOperation.REPLACE_AUDIO:
+            return "The external media does not contain an audio stream"
         return "The input does not contain an audio stream"
+    if isinstance(info, ReplaceAudioTargetHasNoVideoError):
+        return "The target media does not contain a video stream"
+    if isinstance(info, ExternalMediaHasVideoError):
+        return "The external audio media must be audio-only"
+    if isinstance(info, ExternalAudioMediaNotFoundError):
+        return "The external audio media file was not found"
+    if isinstance(info, TargetMediaInspectionError):
+        return "Target media inspection failed"
+    if isinstance(info, ExternalAudioInspectionError):
+        return "External audio inspection failed"
+    if isinstance(info, InvalidReplaceAudioDurationError):
+        return "Target media inspection failed"
     if isinstance(info, MediaHasNoVideoError):
         return "The input does not contain a video stream"
     if isinstance(info, InvalidVolumeError):
@@ -246,6 +272,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Trim processing failed"
     if operation is JobOperation.SPEED:
         return "Speed processing failed"
+    if operation is JobOperation.REPLACE_AUDIO:
+        return "Audio replacement failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):
