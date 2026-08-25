@@ -10,6 +10,7 @@ class JobOperation(str, Enum):
     EXTRACT_AUDIO = "extract_audio"
     MUTE = "mute"
     VOLUME = "volume"
+    TRIM = "trim"
 
     @property
     def canonical(self) -> "JobOperation":

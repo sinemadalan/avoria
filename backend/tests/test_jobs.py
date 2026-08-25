@@ -336,6 +336,71 @@ def test_create_volume_job_rejects_missing_or_extra_parameters(
 
 
 @pytest.mark.parametrize(
+    ("start", "end"),
+    [(0, 10), (1.5, 10.25)],
+)
+def test_create_trim_job_accepts_integer_and_decimal_timestamps(
+    start: int | float,
+    end: int | float,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "trim",
+            "parameters": {"start_seconds": start, "end_seconds": end},
+        },
+    )
+
+    assert response.status_code == 202
+    assert queue.enqueued[-1][2] is JobOperation.TRIM
+    assert queue.enqueued[-1][3] == {
+        "start_seconds": float(start),
+        "end_seconds": float(end),
+    }
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"start_seconds": -1, "end_seconds": 10},
+        {"start_seconds": 0, "end_seconds": 0},
+        {"start_seconds": 5, "end_seconds": 5},
+        {"start_seconds": 6, "end_seconds": 5},
+        {"start_seconds": True, "end_seconds": 5},
+        {"start_seconds": 0, "end_seconds": False},
+        {"start_seconds": "1", "end_seconds": 5},
+        {"start_seconds": 0, "end_seconds": "5"},
+        {"start_seconds": None, "end_seconds": 5},
+        {"start_seconds": 0, "end_seconds": None},
+        {"end_seconds": 5},
+        {"start_seconds": 0},
+        {"start_seconds": 0, "end_seconds": 5, "codec": "copy"},
+    ],
+)
+def test_create_trim_job_rejects_invalid_parameters_before_queue(
+    parameters: dict[str, object],
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "trim", "parameters": parameters},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+@pytest.mark.parametrize(
     "output_format",
     ["mp3", "wav", "flac", "m4a", "opus", "ogg"],
 )

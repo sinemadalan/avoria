@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, and volume adjustment through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, and frame-accurate trim/cut through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -170,6 +170,27 @@ primary video. Audio is re-encoded because FFmpeg's volume filter is applied:
 MP4, MOV, and MKV use AAC, WebM uses Opus, and AVI uses MP3. Silent videos are
 rejected because they do not contain an audio stream to adjust.
 
+Trim a decimal timestamp range while preserving the supported source container:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "trim",
+  "parameters": {
+    "start_seconds": 10.25,
+    "end_seconds": 25.75
+  }
+}
+```
+
+`trim` accepts finite integer or decimal seconds and targets frame-accurate cuts
+by seeking after input decoding and re-encoding rather than using keyframe-only
+stream copy. Video+audio, video-only, and audio-only inputs are supported; all
+audio streams are retained. Video containers use the existing MP4, MOV, MKV,
+WebM, and AVI compression profiles. Audio-only inputs preserve the existing MP3,
+WAV, FLAC, M4A, Opus, or OGG profile and extension. Raw AAC/ADTS is not a
+source-preserving trim target. Subtitle and data streams are omitted.
+
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |
 | MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |
@@ -226,7 +247,7 @@ The conversion development flow is:
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-Audio extraction, compression, mute, and volume adjustment use the same processing queue without the conversion-options step:
+Audio extraction, compression, mute, volume adjustment, and trim use the same processing queue without the conversion-options step:
 
 ```text
 Upload -> Inspect -> Create processing job -> Poll job status -> Check output

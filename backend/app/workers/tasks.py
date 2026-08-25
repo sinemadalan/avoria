@@ -32,6 +32,12 @@ from backend.app.processing.conversion import (
     get_conversion_service,
 )
 from backend.app.processing.mute import MuteService, get_mute_service
+from backend.app.processing.trim import (
+    TrimProfile,
+    TrimService,
+    TrimSpec,
+    get_trim_service,
+)
 from backend.app.processing.volume import VolumeService, VolumeSpec, get_volume_service
 
 logger = logging.getLogger(__name__)
@@ -87,6 +93,11 @@ def process_media_job(
         if job_operation is JobOperation.VOLUME
         else None
     )
+    trim = (
+        TrimSpec.from_payload(parameters)
+        if job_operation is JobOperation.TRIM
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -129,6 +140,8 @@ def process_media_job(
             get_volume_service() if job_operation is JobOperation.VOLUME else None
         ),
         volume=volume,
+        trimmer=get_trim_service() if trim else None,
+        trim=trim,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -162,6 +175,8 @@ def execute_media_job(
     muter: MuteService | None = None,
     volume_adjuster: VolumeService | None = None,
     volume: VolumeSpec | None = None,
+    trimmer: TrimService | None = None,
+    trim: TrimSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -170,6 +185,7 @@ def execute_media_job(
     extraction_profile: AudioExtractionProfile | None = None
     mute_profile: CompressionProfile | None = None
     volume_profile: CompressionProfile | None = None
+    trim_profile: TrimProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -202,6 +218,11 @@ def execute_media_job(
                 raise ValueError("Volume dependencies are unavailable")
             volume_profile = volume_adjuster.resolve_profile(input_path)
             extension = volume_profile.extension
+        elif operation is JobOperation.TRIM:
+            if trimmer is None or trim is None:
+                raise ValueError("Trim dependencies are unavailable")
+            trim_profile = trimmer.resolve_profile(input_path, trim)
+            extension = trim_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -227,13 +248,15 @@ def execute_media_job(
             )
         elif operation is JobOperation.MUTE:
             muter.mute(input_path, target.temporary_path, mute_profile)
-        else:
+        elif operation is JobOperation.VOLUME:
             volume_adjuster.adjust(
                 input_path,
                 target.temporary_path,
                 volume,
                 volume_profile,
             )
+        else:
+            trimmer.trim(input_path, target.temporary_path, trim, trim_profile)
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)

@@ -19,10 +19,26 @@ from backend.app.application.ports.jobs import (
     JobState,
 )
 from backend.app.core.celery_app import celery_app
-from backend.app.processing.audio_extraction import MediaHasNoAudioError
+from backend.app.processing.audio_extraction import (
+    MediaHasNoAudioError,
+    UnsupportedAudioContainerError,
+)
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
 from backend.app.processing.mute import MediaHasNoVideoError
+from backend.app.processing.probe import (
+    FFprobeExecutableNotFoundError,
+    FFprobeProcessError,
+    FFprobeTimeoutError,
+    InvalidMediaError,
+)
+from backend.app.processing.trim import (
+    InvalidTrimMediaDurationError,
+    InvalidTrimRangeError,
+    MediaHasNoTrimStreamError,
+    TrimEndExceedsDurationError,
+    TrimStartExceedsDurationError,
+)
 from backend.app.processing.volume import InvalidVolumeError
 
 TASK_NAME = "avoria.media.convert"
@@ -178,13 +194,37 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
             return "Video mute is not supported for this container"
         if operation is JobOperation.VOLUME:
             return "Volume adjustment is not supported for this container"
+        if operation is JobOperation.TRIM:
+            return "Trim is not supported for this container"
         return "Compression is not supported for this container"
+    if isinstance(info, UnsupportedAudioContainerError):
+        return "Trim is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
         return "The input does not contain an audio stream"
     if isinstance(info, MediaHasNoVideoError):
         return "The input does not contain a video stream"
     if isinstance(info, InvalidVolumeError):
         return str(info)
+    if isinstance(info, InvalidTrimRangeError):
+        return "Invalid trim range"
+    if isinstance(info, TrimStartExceedsDurationError):
+        return "Start exceeds media duration"
+    if isinstance(info, TrimEndExceedsDurationError):
+        return "End exceeds media duration"
+    if isinstance(info, MediaHasNoTrimStreamError):
+        return "Media has no audio/video stream"
+    if isinstance(info, InvalidTrimMediaDurationError):
+        return "Media inspection failed"
+    if operation is JobOperation.TRIM and isinstance(
+        info,
+        (
+            InvalidMediaError,
+            FFprobeExecutableNotFoundError,
+            FFprobeProcessError,
+            FFprobeTimeoutError,
+        ),
+    ):
+        return "Media inspection failed"
     if operation is JobOperation.COMPRESS:
         return "Video compression failed"
     if operation is JobOperation.EXTRACT_AUDIO:
@@ -193,6 +233,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Video mute failed"
     if operation is JobOperation.VOLUME:
         return "Volume adjustment failed"
+    if operation is JobOperation.TRIM:
+        return "Trim processing failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

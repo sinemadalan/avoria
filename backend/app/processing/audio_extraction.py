@@ -94,6 +94,45 @@ class MediaHasNoAudioError(Exception):
     """Raised when extraction input does not contain an audio stream."""
 
 
+class UnsupportedAudioContainerError(Exception):
+    """Raised when a source audio container cannot be preserved."""
+
+
+def detect_audio_profile(
+    input_path: Path,
+    inspection: MediaInspection,
+) -> AudioExtractionProfile:
+    """Resolve a source-preserving audio profile from the central profile registry."""
+    extension = input_path.suffix.casefold().removeprefix(".")
+    profile = next(
+        (
+            candidate
+            for candidate in AUDIO_EXTRACTION_PROFILES.values()
+            if candidate.extension == extension
+        ),
+        None,
+    )
+    format_names = {
+        item.strip().casefold()
+        for item in (inspection.format.name or "").split(",")
+        if item.strip()
+    }
+    if profile is None or not _audio_format_matches(profile, format_names):
+        raise UnsupportedAudioContainerError
+    return profile
+
+
+def _audio_format_matches(
+    profile: AudioExtractionProfile,
+    format_names: set[str],
+) -> bool:
+    if profile.format is AudioExtractionFormat.M4A:
+        return bool(format_names.intersection({"mov", "mp4", "m4a"}))
+    if profile.format in {AudioExtractionFormat.OPUS, AudioExtractionFormat.OGG}:
+        return bool(format_names.intersection({"ogg", "opus"}))
+    return profile.muxer in format_names or profile.extension in format_names
+
+
 def validate_audio_stream(inspection: MediaInspection) -> None:
     if not inspection.audio_streams:
         raise MediaHasNoAudioError("The input does not contain an audio stream")

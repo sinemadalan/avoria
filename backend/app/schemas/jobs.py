@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, model_validator
 
 from backend.app.application.ports.jobs import JobOperation, JobState
 from backend.app.processing.audio_extraction import (
@@ -16,6 +16,7 @@ from backend.app.processing.conversion import (
     VideoCodec,
     validate_compatibility,
 )
+from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
 from backend.app.processing.volume import InvalidVolumeError, VolumeSpec
 
 
@@ -91,6 +92,30 @@ class VolumeParameters(BaseModel):
         return self.to_spec().to_payload()
 
 
+class TrimParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    start_seconds: StrictInt | StrictFloat
+    end_seconds: StrictInt | StrictFloat
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "TrimParameters":
+        try:
+            self.to_spec()
+        except InvalidTrimRangeError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+    def to_spec(self) -> TrimSpec:
+        return TrimSpec(
+            start_seconds=self.start_seconds,
+            end_seconds=self.end_seconds,
+        )
+
+    def to_payload(self) -> dict[str, float]:
+        return self.to_spec().to_payload()
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -102,6 +127,7 @@ class JobCreateRequest(BaseModel):
         | ExtractAudioParameters
         | MuteParameters
         | VolumeParameters
+        | TrimParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -123,6 +149,8 @@ class JobCreateRequest(BaseModel):
             model = MuteParameters
         elif operation in {JobOperation.VOLUME, JobOperation.VOLUME.value}:
             model = VolumeParameters
+        elif operation in {JobOperation.TRIM, JobOperation.TRIM.value}:
+            model = TrimParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -137,6 +165,8 @@ class JobCreateRequest(BaseModel):
             expected = MuteParameters
         elif self.operation is JobOperation.VOLUME:
             expected = VolumeParameters
+        elif self.operation is JobOperation.TRIM:
+            expected = TrimParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):
