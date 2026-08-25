@@ -22,6 +22,7 @@ from backend.app.core.celery_app import celery_app
 from backend.app.processing.audio_extraction import MediaHasNoAudioError
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
+from backend.app.processing.mute import MediaHasNoVideoError
 
 TASK_NAME = "avoria.media.convert"
 _MAX_LOCAL_JOBS = 10_000
@@ -172,13 +173,19 @@ def _error_message(
 
 def _public_failure_message(info: Any, operation: JobOperation) -> str:
     if isinstance(info, UnsupportedCompressionContainerError):
+        if operation is JobOperation.MUTE:
+            return "Video mute is not supported for this container"
         return "Compression is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
         return "The input does not contain an audio stream"
+    if isinstance(info, MediaHasNoVideoError):
+        return "The input does not contain a video stream"
     if operation is JobOperation.COMPRESS:
         return "Video compression failed"
     if operation is JobOperation.EXTRACT_AUDIO:
         return "Audio extraction failed"
+    if operation is JobOperation.MUTE:
+        return "Video mute failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

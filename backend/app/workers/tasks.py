@@ -31,6 +31,7 @@ from backend.app.processing.conversion import (
     FFmpegConversionError,
     get_conversion_service,
 )
+from backend.app.processing.mute import MuteService, get_mute_service
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ def process_media_job(
             get_audio_extraction_service() if extraction else None
         ),
         extraction=extraction,
+        muter=get_mute_service() if job_operation is JobOperation.MUTE else None,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -147,12 +149,14 @@ def execute_media_job(
     compression: CompressionSpec | None = None,
     audio_extractor: AudioExtractionService | None = None,
     extraction: AudioExtractionSpec | None = None,
+    muter: MuteService | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
     statistics: CompressionStatistics | None = None
     compression_profile: CompressionProfile | None = None
     extraction_profile: AudioExtractionProfile | None = None
+    mute_profile: CompressionProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -175,6 +179,11 @@ def execute_media_job(
                 raise ValueError("Audio extraction dependencies are unavailable")
             extraction_profile = audio_extractor.resolve_profile(extraction)
             extension = extraction_profile.extension
+        elif operation is JobOperation.MUTE:
+            if muter is None:
+                raise ValueError("Mute dependencies are unavailable")
+            mute_profile = muter.resolve_profile(input_path)
+            extension = mute_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -191,13 +200,15 @@ def execute_media_job(
                 input_path.stat().st_size,
                 target.temporary_path.stat().st_size,
             )
-        else:
+        elif operation is JobOperation.EXTRACT_AUDIO:
             audio_extractor.extract(
                 input_path,
                 target.temporary_path,
                 extraction,
                 extraction_profile,
             )
+        else:
+            muter.mute(input_path, target.temporary_path, mute_profile)
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)

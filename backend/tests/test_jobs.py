@@ -223,6 +223,51 @@ def test_create_extract_audio_job_accepts_no_parameters(
     ]
 
 
+def test_create_mute_job_accepts_no_parameters(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "mute"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["operation"] == "mute"
+    assert queue.enqueued[-1][2] is JobOperation.MUTE
+    assert queue.enqueued[-1][3] == {}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("format", "mp4"),
+        ("parameters", {"codec": "copy"}),
+        ("parameters", {"bitrate": "1M"}),
+        ("parameters", {"video_codec": "h264"}),
+    ],
+)
+def test_create_mute_job_rejects_processing_options_before_queue(
+    field: str,
+    value: object,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "mute", field: value},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
 @pytest.mark.parametrize(
     "output_format",
     ["mp3", "wav", "flac", "m4a", "opus", "ogg"],
@@ -502,6 +547,30 @@ def test_completed_compression_status_includes_statistics(
         "reduction_percentage": 20.0,
         "compression_effective": True,
     }
+
+
+def test_completed_mute_status_reports_preserved_container(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.MUTE,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="mkv",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["progress"] == 100
+    assert response.json()["output"] == {"output_id": job_id, "format": "mkv"}
 
 
 def test_completed_audio_extraction_status_reports_mp3(

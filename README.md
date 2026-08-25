@@ -140,6 +140,19 @@ FFprobe to reject inputs without an audio stream before starting FFmpeg.
 Completed outputs are finalized atomically under `data/outputs/` with the
 selected `.mp3`, `.wav`, `.flac`, `.m4a`, `.opus`, or `.ogg` extension.
 
+Remove all audio from a video while preserving its source container and copying
+the primary video stream without re-encoding:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "mute"
+}
+```
+
+Mute accepts no processing parameters. It preserves MP4, MOV, MKV, WebM, and
+AVI containers, and deliberately omits audio, subtitle, and data streams.
+
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |
 | MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |

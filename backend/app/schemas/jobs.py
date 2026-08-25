@@ -63,12 +63,21 @@ class ExtractAudioParameters(BaseModel):
         return {}
 
 
+class MuteParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    def to_payload(self) -> dict[str, str]:
+        return {}
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     media_id: str
     operation: JobOperation
-    parameters: ConvertParameters | CompressParameters | ExtractAudioParameters
+    parameters: (
+        ConvertParameters | CompressParameters | ExtractAudioParameters | MuteParameters
+    )
     format: AudioExtractionFormat | None = None
 
     @model_validator(mode="before")
@@ -85,6 +94,8 @@ class JobCreateRequest(BaseModel):
             JobOperation.EXTRACT_AUDIO.value,
         }:
             model = ExtractAudioParameters
+        elif operation in {JobOperation.MUTE, JobOperation.MUTE.value}:
+            model = MuteParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -95,6 +106,8 @@ class JobCreateRequest(BaseModel):
             expected = CompressParameters
         elif self.operation is JobOperation.EXTRACT_AUDIO:
             expected = ExtractAudioParameters
+        elif self.operation is JobOperation.MUTE:
+            expected = MuteParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):
