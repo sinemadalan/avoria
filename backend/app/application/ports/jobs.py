@@ -11,6 +11,7 @@ class JobOperation(str, Enum):
     MUTE = "mute"
     VOLUME = "volume"
     TRIM = "trim"
+    SPEED = "speed"
 
     @property
     def canonical(self) -> "JobOperation":

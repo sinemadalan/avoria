@@ -32,6 +32,12 @@ from backend.app.processing.conversion import (
     get_conversion_service,
 )
 from backend.app.processing.mute import MuteService, get_mute_service
+from backend.app.processing.speed import (
+    SpeedProfile,
+    SpeedService,
+    SpeedSpec,
+    get_speed_service,
+)
 from backend.app.processing.trim import (
     TrimProfile,
     TrimService,
@@ -98,6 +104,11 @@ def process_media_job(
         if job_operation is JobOperation.TRIM
         else None
     )
+    speed = (
+        SpeedSpec.from_payload(parameters)
+        if job_operation is JobOperation.SPEED
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -142,6 +153,8 @@ def process_media_job(
         volume=volume,
         trimmer=get_trim_service() if trim else None,
         trim=trim,
+        speed_changer=get_speed_service() if speed else None,
+        speed=speed,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -177,6 +190,8 @@ def execute_media_job(
     volume: VolumeSpec | None = None,
     trimmer: TrimService | None = None,
     trim: TrimSpec | None = None,
+    speed_changer: SpeedService | None = None,
+    speed: SpeedSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -186,6 +201,7 @@ def execute_media_job(
     mute_profile: CompressionProfile | None = None
     volume_profile: CompressionProfile | None = None
     trim_profile: TrimProfile | None = None
+    speed_profile: SpeedProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -223,6 +239,11 @@ def execute_media_job(
                 raise ValueError("Trim dependencies are unavailable")
             trim_profile = trimmer.resolve_profile(input_path, trim)
             extension = trim_profile.extension
+        elif operation is JobOperation.SPEED:
+            if speed_changer is None or speed is None:
+                raise ValueError("Speed dependencies are unavailable")
+            speed_profile = speed_changer.resolve_profile(input_path)
+            extension = speed_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -255,8 +276,15 @@ def execute_media_job(
                 volume,
                 volume_profile,
             )
-        else:
+        elif operation is JobOperation.TRIM:
             trimmer.trim(input_path, target.temporary_path, trim, trim_profile)
+        else:
+            speed_changer.change_speed(
+                input_path,
+                target.temporary_path,
+                speed,
+                speed_profile,
+            )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)

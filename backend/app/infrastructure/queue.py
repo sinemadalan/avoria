@@ -26,6 +26,7 @@ from backend.app.processing.audio_extraction import (
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
 from backend.app.processing.mute import MediaHasNoVideoError
+from backend.app.processing.speed import InvalidSpeedError, MediaHasNoSpeedStreamError
 from backend.app.processing.probe import (
     FFprobeExecutableNotFoundError,
     FFprobeProcessError,
@@ -196,8 +197,12 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
             return "Volume adjustment is not supported for this container"
         if operation is JobOperation.TRIM:
             return "Trim is not supported for this container"
+        if operation is JobOperation.SPEED:
+            return "Speed is not supported for this container"
         return "Compression is not supported for this container"
     if isinstance(info, UnsupportedAudioContainerError):
+        if operation is JobOperation.SPEED:
+            return "Speed is not supported for this container"
         return "Trim is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
         return "The input does not contain an audio stream"
@@ -205,6 +210,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "The input does not contain a video stream"
     if isinstance(info, InvalidVolumeError):
         return str(info)
+    if isinstance(info, InvalidSpeedError):
+        return "Invalid speed"
     if isinstance(info, InvalidTrimRangeError):
         return "Invalid trim range"
     if isinstance(info, TrimStartExceedsDurationError):
@@ -215,7 +222,9 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Media has no audio/video stream"
     if isinstance(info, InvalidTrimMediaDurationError):
         return "Media inspection failed"
-    if operation is JobOperation.TRIM and isinstance(
+    if isinstance(info, MediaHasNoSpeedStreamError):
+        return "Media has no audio/video stream"
+    if operation in {JobOperation.TRIM, JobOperation.SPEED} and isinstance(
         info,
         (
             InvalidMediaError,
@@ -235,6 +244,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Volume adjustment failed"
     if operation is JobOperation.TRIM:
         return "Trim processing failed"
+    if operation is JobOperation.SPEED:
+        return "Speed processing failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

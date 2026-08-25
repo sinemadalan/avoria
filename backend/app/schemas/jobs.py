@@ -17,6 +17,7 @@ from backend.app.processing.conversion import (
     validate_compatibility,
 )
 from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
+from backend.app.processing.speed import InvalidSpeedError, SpeedSpec
 from backend.app.processing.volume import InvalidVolumeError, VolumeSpec
 
 
@@ -116,6 +117,26 @@ class TrimParameters(BaseModel):
         return self.to_spec().to_payload()
 
 
+class SpeedParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    speed: StrictInt | StrictFloat
+
+    @model_validator(mode="after")
+    def validate_speed(self) -> "SpeedParameters":
+        try:
+            self.to_spec()
+        except InvalidSpeedError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+    def to_spec(self) -> SpeedSpec:
+        return SpeedSpec(speed=self.speed)
+
+    def to_payload(self) -> dict[str, float]:
+        return self.to_spec().to_payload()
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +149,7 @@ class JobCreateRequest(BaseModel):
         | MuteParameters
         | VolumeParameters
         | TrimParameters
+        | SpeedParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -151,6 +173,8 @@ class JobCreateRequest(BaseModel):
             model = VolumeParameters
         elif operation in {JobOperation.TRIM, JobOperation.TRIM.value}:
             model = TrimParameters
+        elif operation in {JobOperation.SPEED, JobOperation.SPEED.value}:
+            model = SpeedParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -167,6 +191,8 @@ class JobCreateRequest(BaseModel):
             expected = VolumeParameters
         elif self.operation is JobOperation.TRIM:
             expected = TrimParameters
+        elif self.operation is JobOperation.SPEED:
+            expected = SpeedParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):

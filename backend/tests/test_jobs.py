@@ -400,6 +400,86 @@ def test_create_trim_job_rejects_invalid_parameters_before_queue(
     assert queue.enqueued == []
 
 
+@pytest.mark.parametrize("speed", [0.25, 0.5, 1, 1.5, 2, 4])
+def test_create_speed_job_accepts_supported_factors_on_original_upload(
+    speed: int | float,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"original-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "speed",
+            "parameters": {"speed": speed},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["operation"] == "speed"
+    assert queue.enqueued[-1][1] == media_id
+    assert queue.enqueued[-1][2] is JobOperation.SPEED
+    assert queue.enqueued[-1][3] == {"speed": float(speed)}
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"speed": 0},
+        {"speed": -1},
+        {"speed": 0.24},
+        {"speed": 4.01},
+        {"speed": "1.5"},
+        {"speed": None},
+        {"speed": True},
+        {"speed": False},
+        {},
+        {"speed": 1.5, "codec": "copy"},
+    ],
+)
+def test_create_speed_job_rejects_invalid_parameters_before_queue(
+    parameters: dict[str, object],
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"original-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "speed", "parameters": parameters},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+@pytest.mark.parametrize("non_finite", ["NaN", "Infinity", "-Infinity"])
+def test_create_speed_job_rejects_non_finite_json_numbers(
+    non_finite: str,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"original-upload")
+    payload = (
+        f'{{"media_id":"{media_id}","operation":"speed",'
+        f'"parameters":{{"speed":{non_finite}}}}}'
+    )
+
+    response = client.post(
+        "/api/v1/jobs",
+        content=payload,
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
 @pytest.mark.parametrize(
     "output_format",
     ["mp3", "wav", "flac", "m4a", "opus", "ogg"],

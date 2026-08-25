@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, and frame-accurate trim/cut through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, frame-accurate trim/cut, and playback speed control through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -191,6 +191,27 @@ WebM, and AVI compression profiles. Audio-only inputs preserve the existing MP3,
 WAV, FLAC, M4A, Opus, or OGG profile and extension. Raw AAC/ADTS is not a
 source-preserving trim target. Subtitle and data streams are omitted.
 
+Change playback speed independently on an original upload or any other media ID:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "speed",
+  "parameters": {
+    "speed": 1.5
+  }
+}
+```
+
+`speed` accepts finite numeric factors from `0.25` through `4.0`, including
+`1.0` (which follows the same deterministic processing path). It supports
+video+audio, video-only, and audio-only media, preserves every audio stream,
+and retains the supported source container. Video timestamps are changed with
+`setpts`; audio uses a pitch-preserving, safely chained `atempo` filter. Filtered
+streams are re-encoded with the existing centralized video/audio profiles.
+Subtitle and data streams are omitted. Speed is a standalone operation: trim,
+mute, volume, compression, and processing pipelines are not prerequisites.
+
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |
 | MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |
@@ -247,7 +268,7 @@ The conversion development flow is:
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-Audio extraction, compression, mute, volume adjustment, and trim use the same processing queue without the conversion-options step:
+Audio extraction, compression, mute, volume adjustment, trim, and speed control use the same processing queue without the conversion-options step:
 
 ```text
 Upload -> Inspect -> Create processing job -> Poll job status -> Check output
