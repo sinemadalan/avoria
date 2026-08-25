@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
 
 from backend.app.application.ports.jobs import JobOperation, JobState
 from backend.app.processing.audio_extraction import (
@@ -16,6 +16,7 @@ from backend.app.processing.conversion import (
     VideoCodec,
     validate_compatibility,
 )
+from backend.app.processing.volume import InvalidVolumeError, VolumeSpec
 
 
 class ConvertParameters(BaseModel):
@@ -70,13 +71,37 @@ class MuteParameters(BaseModel):
         return {}
 
 
+class VolumeParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    volume_percent: StrictInt
+
+    @model_validator(mode="after")
+    def validate_percentage(self) -> "VolumeParameters":
+        try:
+            self.to_spec()
+        except InvalidVolumeError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+    def to_spec(self) -> VolumeSpec:
+        return VolumeSpec(volume_percent=self.volume_percent)
+
+    def to_payload(self) -> dict[str, int]:
+        return self.to_spec().to_payload()
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     media_id: str
     operation: JobOperation
     parameters: (
-        ConvertParameters | CompressParameters | ExtractAudioParameters | MuteParameters
+        ConvertParameters
+        | CompressParameters
+        | ExtractAudioParameters
+        | MuteParameters
+        | VolumeParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -96,6 +121,8 @@ class JobCreateRequest(BaseModel):
             model = ExtractAudioParameters
         elif operation in {JobOperation.MUTE, JobOperation.MUTE.value}:
             model = MuteParameters
+        elif operation in {JobOperation.VOLUME, JobOperation.VOLUME.value}:
+            model = VolumeParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -108,6 +135,8 @@ class JobCreateRequest(BaseModel):
             expected = ExtractAudioParameters
         elif self.operation is JobOperation.MUTE:
             expected = MuteParameters
+        elif self.operation is JobOperation.VOLUME:
+            expected = VolumeParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):
@@ -116,7 +145,7 @@ class JobCreateRequest(BaseModel):
             raise ValueError("Format is only supported for audio extraction")
         return self
 
-    def to_payload(self) -> dict[str, str]:
+    def to_payload(self) -> dict[str, Any]:
         if self.operation is JobOperation.EXTRACT_AUDIO:
             return AudioExtractionSpec(
                 format=self.format or AudioExtractionFormat.MP3

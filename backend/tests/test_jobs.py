@@ -268,6 +268,73 @@ def test_create_mute_job_rejects_processing_options_before_queue(
     assert queue.enqueued == []
 
 
+@pytest.mark.parametrize("volume_percent", [0, 50, 100, 150, 200])
+def test_create_volume_job_accepts_supported_percentages(
+    volume_percent: int,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "volume",
+            "parameters": {"volume_percent": volume_percent},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["operation"] == "volume"
+    assert queue.enqueued[-1][2] is JobOperation.VOLUME
+    assert queue.enqueued[-1][3] == {"volume_percent": volume_percent}
+
+
+@pytest.mark.parametrize("volume_percent", [-1, 201, "50", None, 50.0, True])
+def test_create_volume_job_rejects_invalid_percentage(
+    volume_percent: object,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": media_id,
+            "operation": "volume",
+            "parameters": {"volume_percent": volume_percent},
+        },
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [{}, {"volume_percent": 50, "codec": "aac"}],
+)
+def test_create_volume_job_rejects_missing_or_extra_parameters(
+    parameters: dict[str, object],
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_id = str(uuid4())
+    (upload_directory / f"{media_id}.mp4").write_bytes(b"media")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"media_id": media_id, "operation": "volume", "parameters": parameters},
+    )
+
+    assert response.status_code == 422
+    assert queue.enqueued == []
+
+
 @pytest.mark.parametrize(
     "output_format",
     ["mp3", "wav", "flac", "m4a", "opus", "ogg"],
@@ -571,6 +638,30 @@ def test_completed_mute_status_reports_preserved_container(
     assert response.json()["status"] == "completed"
     assert response.json()["progress"] == 100
     assert response.json()["output"] == {"output_id": job_id, "format": "mkv"}
+
+
+def test_completed_volume_status_reports_preserved_container(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, _, _, queue = jobs_client
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+    queue.records[job_id] = JobRecord(
+        job_id=job_id,
+        media_id=media_id,
+        operation=JobOperation.VOLUME,
+        status=JobState.COMPLETED,
+        output_id=job_id,
+        output_format="webm",
+        progress=100,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["progress"] == 100
+    assert response.json()["output"] == {"output_id": job_id, "format": "webm"}
 
 
 def test_completed_audio_extraction_status_reports_mp3(

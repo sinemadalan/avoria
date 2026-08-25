@@ -23,6 +23,7 @@ from backend.app.processing.audio_extraction import MediaHasNoAudioError
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
 from backend.app.processing.mute import MediaHasNoVideoError
+from backend.app.processing.volume import InvalidVolumeError
 
 TASK_NAME = "avoria.media.convert"
 _MAX_LOCAL_JOBS = 10_000
@@ -34,7 +35,7 @@ class CeleryJobQueue(JobQueue):
     def __init__(self, app: Celery) -> None:
         self.app = app
         self._submitted: OrderedDict[
-            str, tuple[str, JobOperation, dict[str, str]]
+            str, tuple[str, JobOperation, dict[str, Any]]
         ] = OrderedDict()
         self._submitted_lock = Lock()
 
@@ -43,7 +44,7 @@ class CeleryJobQueue(JobQueue):
         job_id: str,
         media_id: str,
         operation: JobOperation,
-        parameters: dict[str, str],
+        parameters: dict[str, Any],
     ) -> None:
         try:
             publish = partial(
@@ -115,7 +116,7 @@ class CeleryJobQueue(JobQueue):
         job_id: str,
         media_id: str,
         operation: JobOperation,
-        parameters: dict[str, str],
+        parameters: dict[str, Any],
     ) -> None:
         # RPC has no record before a worker receives a task. This bounded registry
         # preserves the immediate status contract without persisting job state.
@@ -144,7 +145,7 @@ def normalize_job_status(state: str) -> JobState:
 
 def _output_format(
     metadata: dict[str, Any],
-    local_metadata: tuple[str, JobOperation, dict[str, str]] | None,
+    local_metadata: tuple[str, JobOperation, dict[str, Any]] | None,
 ) -> str | None:
     value = metadata.get("format")
     if value is None and local_metadata is not None:
@@ -175,17 +176,23 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
     if isinstance(info, UnsupportedCompressionContainerError):
         if operation is JobOperation.MUTE:
             return "Video mute is not supported for this container"
+        if operation is JobOperation.VOLUME:
+            return "Volume adjustment is not supported for this container"
         return "Compression is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
         return "The input does not contain an audio stream"
     if isinstance(info, MediaHasNoVideoError):
         return "The input does not contain a video stream"
+    if isinstance(info, InvalidVolumeError):
+        return str(info)
     if operation is JobOperation.COMPRESS:
         return "Video compression failed"
     if operation is JobOperation.EXTRACT_AUDIO:
         return "Audio extraction failed"
     if operation is JobOperation.MUTE:
         return "Video mute failed"
+    if operation is JobOperation.VOLUME:
+        return "Volume adjustment failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

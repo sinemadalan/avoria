@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class JobOperation(str, Enum):
@@ -9,6 +9,7 @@ class JobOperation(str, Enum):
     COMPRESS = "compress"
     EXTRACT_AUDIO = "extract_audio"
     MUTE = "mute"
+    VOLUME = "volume"
 
     @property
     def canonical(self) -> "JobOperation":
@@ -60,7 +61,7 @@ class JobQueue(Protocol):
         job_id: str,
         media_id: str,
         operation: JobOperation,
-        parameters: dict[str, str],
+        parameters: dict[str, Any],
     ) -> None: ...
 
     async def get(self, job_id: str) -> JobRecord: ...

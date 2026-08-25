@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, and multi-format audio extraction through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, and volume adjustment through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -153,6 +153,23 @@ the primary video stream without re-encoding:
 Mute accepts no processing parameters. It preserves MP4, MOV, MKV, WebM, and
 AVI containers, and deliberately omits audio, subtitle, and data streams.
 
+Adjust all audio streams in a video from 0% through 200%:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "volume",
+  "parameters": {
+    "volume_percent": 50
+  }
+}
+```
+
+Volume preserves MP4, MOV, MKV, WebM, and AVI containers and stream-copies the
+primary video. Audio is re-encoded because FFmpeg's volume filter is applied:
+MP4, MOV, and MKV use AAC, WebM uses Opus, and AVI uses MP3. Silent videos are
+rejected because they do not contain an audio stream to adjust.
+
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |
 | MP3 | `.mp3` | `libmp3lame` | `mp3` | Quality 2 |
@@ -209,7 +226,7 @@ The conversion development flow is:
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-Audio extraction and compression use the same processing queue without the conversion-options step:
+Audio extraction, compression, mute, and volume adjustment use the same processing queue without the conversion-options step:
 
 ```text
 Upload -> Inspect -> Create processing job -> Poll job status -> Check output

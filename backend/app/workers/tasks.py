@@ -32,6 +32,7 @@ from backend.app.processing.conversion import (
     get_conversion_service,
 )
 from backend.app.processing.mute import MuteService, get_mute_service
+from backend.app.processing.volume import VolumeService, VolumeSpec, get_volume_service
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def process_media_job(
     self: MediaTask,
     media_id: str,
     operation: str,
-    parameters: dict[str, str],
+    parameters: dict[str, Any],
 ) -> dict[str, Any]:
     job_id = str(self.request.id)
     job_operation = JobOperation(operation)
@@ -79,6 +80,11 @@ def process_media_job(
     extraction = (
         AudioExtractionSpec.from_payload(parameters)
         if job_operation is JobOperation.EXTRACT_AUDIO
+        else None
+    )
+    volume = (
+        VolumeSpec.from_payload(parameters)
+        if job_operation is JobOperation.VOLUME
         else None
     )
     logger.info(
@@ -119,6 +125,10 @@ def process_media_job(
         ),
         extraction=extraction,
         muter=get_mute_service() if job_operation is JobOperation.MUTE else None,
+        volume_adjuster=(
+            get_volume_service() if job_operation is JobOperation.VOLUME else None
+        ),
+        volume=volume,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -150,6 +160,8 @@ def execute_media_job(
     audio_extractor: AudioExtractionService | None = None,
     extraction: AudioExtractionSpec | None = None,
     muter: MuteService | None = None,
+    volume_adjuster: VolumeService | None = None,
+    volume: VolumeSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -157,6 +169,7 @@ def execute_media_job(
     compression_profile: CompressionProfile | None = None
     extraction_profile: AudioExtractionProfile | None = None
     mute_profile: CompressionProfile | None = None
+    volume_profile: CompressionProfile | None = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
         job_id,
@@ -184,6 +197,11 @@ def execute_media_job(
                 raise ValueError("Mute dependencies are unavailable")
             mute_profile = muter.resolve_profile(input_path)
             extension = mute_profile.extension
+        elif operation is JobOperation.VOLUME:
+            if volume_adjuster is None or volume is None:
+                raise ValueError("Volume dependencies are unavailable")
+            volume_profile = volume_adjuster.resolve_profile(input_path)
+            extension = volume_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -207,8 +225,15 @@ def execute_media_job(
                 extraction,
                 extraction_profile,
             )
-        else:
+        elif operation is JobOperation.MUTE:
             muter.mute(input_path, target.temporary_path, mute_profile)
+        else:
+            volume_adjuster.adjust(
+                input_path,
+                target.temporary_path,
+                volume,
+                volume_profile,
+            )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)
