@@ -219,7 +219,8 @@ Replace every existing target-video audio stream with one uploaded audio file:
   "media_id": "550e8400-e29b-41d4-a716-446655440000",
   "operation": "replace_audio",
   "parameters": {
-    "audio_media_id": "7a6d48cb-56f7-4d43-a06c-e84fdf1f9ad1"
+    "audio_media_id": "7a6d48cb-56f7-4d43-a06c-e84fdf1f9ad1",
+    "loop": true
   }
 }
 ```
@@ -232,12 +233,15 @@ and the first external audio stream becomes the output's only audio stream. The
 target video selects the MP4, MOV, MKV, WebM, or AVI output container and the
 existing centralized profile selects its compatible audio encoder.
 
-The target video is always the duration master. Longer external audio is cut at
-the video duration; shorter external audio plays once and is deterministically
-padded with silence through the end of the video. Audio looping is deliberately
-not supported in this phase. `replace_audio` is standalone and needs only the
-original video and audio uploads; mute, extraction, trim, speed, and other
-operations are not prerequisites.
+The target video is always the duration master. `loop` is optional and defaults
+to `false`: when omitted or false, shorter external audio plays once and is
+deterministically padded with silence through the end of the video. With
+`loop: true`, external audio repeats continuously until the target video ends;
+the final repetition is cut partially when necessary. Longer external audio is
+always cut at the video duration. The target video remains stream-copied and
+all of its old audio streams remain omitted. `replace_audio` is standalone and
+needs only the original video and audio uploads; mute, extraction, trim, speed,
+and other operations are not prerequisites.
 
 | Extraction format | Extension | Encoder | Muxer | Application policy |
 | --- | --- | --- | --- | --- |

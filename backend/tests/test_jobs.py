@@ -1219,8 +1219,34 @@ def test_create_replace_audio_job_accepts_two_original_uploads(
     assert queue.enqueued[-1][1:] == (
         video_id,
         JobOperation.REPLACE_AUDIO,
-        {"audio_media_id": audio_id},
+        {"audio_media_id": audio_id, "loop": False},
     )
+
+
+@pytest.mark.parametrize("loop", [False, True])
+def test_create_replace_audio_job_accepts_explicit_strict_loop_boolean(
+    loop: bool,
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    video_id, audio_id = str(uuid4()), str(uuid4())
+    (upload_directory / f"{video_id}.mp4").write_bytes(b"video-upload")
+    (upload_directory / f"{audio_id}.wav").write_bytes(b"audio-upload")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "media_id": video_id,
+            "operation": "replace_audio",
+            "parameters": {"audio_media_id": audio_id, "loop": loop},
+        },
+    )
+
+    assert response.status_code == 202
+    assert queue.enqueued[-1][3] == {
+        "audio_media_id": audio_id,
+        "loop": loop,
+    }
 
 
 @pytest.mark.parametrize(
@@ -1233,6 +1259,13 @@ def test_create_replace_audio_job_accepts_two_original_uploads(
         {"audio_media_id": "../../audio.mp3"},
         {"audio_media_id": 123},
         {"audio_media_id": True},
+        {"audio_media_id": str(uuid4()), "loop": 1},
+        {"audio_media_id": str(uuid4()), "loop": 0},
+        {"audio_media_id": str(uuid4()), "loop": "true"},
+        {"audio_media_id": str(uuid4()), "loop": "false"},
+        {"audio_media_id": str(uuid4()), "loop": None},
+        {"audio_media_id": str(uuid4()), "loop": []},
+        {"audio_media_id": str(uuid4()), "loop": {}},
         {"audio_media_id": str(uuid4()), "codec": "aac"},
     ],
 )

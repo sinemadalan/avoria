@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import (
     BaseModel,
     ConfigDict,
+    StrictBool,
     StrictFloat,
     StrictInt,
     StrictStr,
@@ -151,6 +152,7 @@ class ReplaceAudioParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     audio_media_id: StrictStr
+    loop: StrictBool = False
 
     @field_validator("audio_media_id")
     @classmethod
@@ -161,9 +163,12 @@ class ReplaceAudioParameters(BaseModel):
             raise ValueError("audio_media_id must be a valid UUID") from exc
 
     def to_spec(self) -> ReplaceAudioSpec:
-        return ReplaceAudioSpec(audio_media_id=self.audio_media_id)
+        return ReplaceAudioSpec(
+            audio_media_id=self.audio_media_id,
+            loop=self.loop,
+        )
 
-    def to_payload(self) -> dict[str, str]:
+    def to_payload(self) -> dict[str, str | bool]:
         return self.to_spec().to_payload()
 
 

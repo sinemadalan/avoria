@@ -330,6 +330,7 @@ def execute_media_job(
                 external_audio_path,
                 target.temporary_path,
                 replace_audio_profile,
+                loop=replace_audio.loop,
             )
         storage.finalize_output(target)
     except FFmpegConversionError as exc:

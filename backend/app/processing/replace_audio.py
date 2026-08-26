@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from backend.app.core.config import get_settings
 from backend.app.processing.audio_extraction import (
@@ -65,13 +65,17 @@ _INSPECTION_ERRORS = (
 @dataclass(frozen=True, slots=True)
 class ReplaceAudioSpec:
     audio_media_id: str
+    loop: bool = False
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, str]) -> "ReplaceAudioSpec":
-        return cls(audio_media_id=payload["audio_media_id"])
+    def from_payload(cls, payload: Mapping[str, Any]) -> "ReplaceAudioSpec":
+        loop = payload.get("loop", False)
+        if not isinstance(loop, bool):
+            raise ValueError("loop must be a boolean")
+        return cls(audio_media_id=payload["audio_media_id"], loop=loop)
 
-    def to_payload(self) -> dict[str, str]:
-        return {"audio_media_id": self.audio_media_id}
+    def to_payload(self) -> dict[str, str | bool]:
+        return {"audio_media_id": self.audio_media_id, "loop": self.loop}
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,10 +107,14 @@ def build_replace_audio_command(
     audio_path: Path,
     output_path: Path,
     profile: ReplaceAudioProfile,
+    *,
+    loop: bool = False,
 ) -> list[str]:
-    # Phase 3E deliberately selects only the first external audio stream. A
-    # future optional looping policy can change the audio input/filter setup
-    # without changing the target-video mapping or container profile.
+    external_input_options = ["-stream_loop", "-1"] if loop else []
+    audio_filter_options = [] if loop else ["-af", "apad"]
+    # Only the first external audio stream is selected. Input-scoped options
+    # immediately before input 1 can later be extended with placement/offset
+    # policy without changing the target-video mapping or container profile.
     return [
         executable,
         "-hide_banner",
@@ -115,6 +123,7 @@ def build_replace_audio_command(
         "-y",
         "-i",
         str(target_path),
+        *external_input_options,
         "-i",
         str(audio_path),
         "-map",
@@ -123,8 +132,7 @@ def build_replace_audio_command(
         "copy",
         "-map",
         "1:a:0",
-        "-af",
-        "apad",
+        *audio_filter_options,
         "-c:a",
         profile.target.audio_encoder,
         *profile.target.audio_options,
@@ -190,6 +198,8 @@ class ReplaceAudioService:
         audio_path: Path,
         output_path: Path,
         profile: ReplaceAudioProfile | None = None,
+        *,
+        loop: bool = False,
     ) -> None:
         selected_profile = profile or self.resolve_profile(target_path, audio_path)
         self.runner.run(
@@ -199,6 +209,7 @@ class ReplaceAudioService:
                 audio_path,
                 output_path,
                 selected_profile,
+                loop=loop,
             )
         )
 
