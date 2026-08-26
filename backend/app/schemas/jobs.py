@@ -220,10 +220,32 @@ class CropParameters(BaseModel):
         return self.to_spec().to_payload()
 
 
+class MergeVideosParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_ids: list[StrictStr]
+
+    @field_validator("media_ids")
+    @classmethod
+    def validate_media_ids(cls, values: list[str]) -> list[str]:
+        if len(values) < 2:
+            raise ValueError("At least two media IDs are required")
+        canonical: list[str] = []
+        for value in values:
+            try:
+                canonical.append(str(UUID(value)))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError("media_ids must contain valid UUIDs") from exc
+        return canonical
+
+    def to_payload(self) -> dict[str, list[str]]:
+        return {"media_ids": self.media_ids.copy()}
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    media_id: str
+    media_id: str | None = None
     operation: JobOperation
     parameters: (
         ConvertParameters
@@ -235,6 +257,7 @@ class JobCreateRequest(BaseModel):
         | SpeedParameters
         | ReplaceAudioParameters
         | CropParameters
+        | MergeVideosParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -267,6 +290,11 @@ class JobCreateRequest(BaseModel):
             model = ReplaceAudioParameters
         elif operation in {JobOperation.CROP, JobOperation.CROP.value}:
             model = CropParameters
+        elif operation in {
+            JobOperation.MERGE_VIDEOS,
+            JobOperation.MERGE_VIDEOS.value,
+        }:
+            model = MergeVideosParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -289,10 +317,14 @@ class JobCreateRequest(BaseModel):
             expected = ReplaceAudioParameters
         elif self.operation is JobOperation.CROP:
             expected = CropParameters
+        elif self.operation is JobOperation.MERGE_VIDEOS:
+            expected = MergeVideosParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):
             raise ValueError("Parameters do not match the requested operation")
+        if self.operation is not JobOperation.MERGE_VIDEOS and self.media_id is None:
+            raise ValueError("media_id is required for this operation")
         if self.operation is not JobOperation.EXTRACT_AUDIO and self.format is not None:
             raise ValueError("Format is only supported for audio extraction")
         return self

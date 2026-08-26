@@ -31,6 +31,15 @@ from backend.app.processing.crop import (
     InvalidCropSpecError,
 )
 from backend.app.processing.mute import MediaHasNoVideoError
+from backend.app.processing.merge_videos import (
+    IncompatibleMergeAudioError,
+    IncompatibleMergeVideosError,
+    InvalidMergeInputCountError,
+    InvalidMergeMetadataError,
+    MergeMediaHasNoVideoError,
+    MergeMediaNotFoundError,
+    UnsupportedMergeContainerError,
+)
 from backend.app.processing.replace_audio import (
     ExternalAudioInspectionError,
     ExternalAudioMediaNotFoundError,
@@ -241,6 +250,20 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Target media inspection failed"
     if isinstance(info, MediaHasNoVideoError):
         return "The input does not contain a video stream"
+    if isinstance(info, MergeMediaHasNoVideoError):
+        return "One of the selected inputs does not contain a video stream"
+    if isinstance(info, MergeMediaNotFoundError):
+        return "One of the selected media files was not found"
+    if isinstance(info, InvalidMergeInputCountError):
+        return "At least two videos are required"
+    if isinstance(info, IncompatibleMergeVideosError):
+        return "Selected videos are not compatible for direct merge"
+    if isinstance(info, IncompatibleMergeAudioError):
+        return "Selected videos have incompatible audio streams"
+    if isinstance(info, InvalidMergeMetadataError):
+        return "Selected video metadata could not be validated"
+    if isinstance(info, UnsupportedMergeContainerError):
+        return "The selected container cannot be merged directly"
     if isinstance(info, CropMediaHasNoVideoError):
         return "The input does not contain a video stream"
     if isinstance(info, InvalidCropDimensionsError):
@@ -289,6 +312,13 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Audio replacement failed"
     if operation is JobOperation.CROP:
         return "Crop processing failed"
+    if operation is JobOperation.MERGE_VIDEOS:
+        if isinstance(
+            info,
+            (InvalidMediaError, FFprobeExecutableNotFoundError, FFprobeProcessError, FFprobeTimeoutError),
+        ):
+            return "Selected video inspection failed"
+        return "Video merge failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

@@ -1309,3 +1309,48 @@ def test_create_replace_audio_job_rejects_missing_external_upload(
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "audio_media_not_found"
     assert queue.enqueued == []
+
+
+def test_create_merge_job_preserves_requested_order(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    media_ids = [str(uuid4()) for _ in range(3)]
+    for media_id in media_ids:
+        (upload_directory / f"{media_id}.mp4").write_bytes(b"video")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "operation": "merge_videos",
+            "parameters": {"media_ids": media_ids},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["media_id"] == media_ids[0]
+    assert queue.enqueued[-1][1:] == (
+        media_ids[0],
+        JobOperation.MERGE_VIDEOS,
+        {"media_ids": media_ids},
+    )
+
+
+def test_create_merge_job_rejects_missing_media_before_queue(
+    jobs_client: tuple[TestClient, Path, Path, FakeJobQueue],
+) -> None:
+    client, upload_directory, _, queue = jobs_client
+    existing, missing = str(uuid4()), str(uuid4())
+    (upload_directory / f"{existing}.mp4").write_bytes(b"video")
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "operation": "merge_videos",
+            "parameters": {"media_ids": [existing, missing]},
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "media_not_found"
+    assert queue.enqueued == []

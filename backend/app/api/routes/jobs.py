@@ -39,25 +39,38 @@ async def create_job(
     storage: StorageService = Depends(get_storage_service),
     job_queue: JobQueue = Depends(get_job_queue),
 ) -> JobCreateResponse:
-    media_id = _canonical_uuid(request.media_id, "media ID", "invalid_media_id")
-    try:
-        await storage.resolve_upload(media_id, settings.allowed_media_extensions)
-    except InvalidMediaIdError as exc:
-        raise AppError("Invalid media ID", code="invalid_media_id") from exc
-    except MediaNotFoundError as exc:
-        raise AppError(
-            "Media file was not found",
-            code="media_not_found",
-            status_code=status.HTTP_404_NOT_FOUND,
-        ) from exc
-    except AmbiguousMediaError as exc:
-        raise AppError(
-            "Multiple media files match this identifier",
-            code="ambiguous_media",
-            status_code=status.HTTP_409_CONFLICT,
-        ) from exc
-
     payload = request.to_payload()
+    requested_media_ids = (
+        payload["media_ids"]
+        if request.operation is JobOperation.MERGE_VIDEOS
+        else [request.media_id]
+    )
+    media_ids = [
+        _canonical_uuid(value, "media ID", "invalid_media_id")
+        for value in requested_media_ids
+    ]
+    media_id = media_ids[0]
+    for candidate_media_id in media_ids:
+        try:
+            await storage.resolve_upload(
+                candidate_media_id,
+                settings.allowed_media_extensions,
+            )
+        except InvalidMediaIdError as exc:
+            raise AppError("Invalid media ID", code="invalid_media_id") from exc
+        except MediaNotFoundError as exc:
+            raise AppError(
+                "Media file was not found",
+                code="media_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
+            ) from exc
+        except AmbiguousMediaError as exc:
+            raise AppError(
+                "Multiple media files match this identifier",
+                code="ambiguous_media",
+                status_code=status.HTTP_409_CONFLICT,
+            ) from exc
+
     if request.operation is JobOperation.REPLACE_AUDIO:
         audio_media_id = payload["audio_media_id"]
         try:

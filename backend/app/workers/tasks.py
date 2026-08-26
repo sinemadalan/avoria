@@ -42,6 +42,13 @@ from backend.app.processing.crop import (
     get_crop_service,
 )
 from backend.app.processing.mute import MuteService, get_mute_service
+from backend.app.processing.merge_videos import (
+    MergeVideosProfile,
+    MergeVideosService,
+    MergeVideosSpec,
+    MergeMediaNotFoundError,
+    get_merge_videos_service,
+)
 from backend.app.processing.replace_audio import (
     ExternalAudioMediaNotFoundError,
     ReplaceAudioProfile,
@@ -136,6 +143,11 @@ def process_media_job(
         if job_operation is JobOperation.CROP
         else None
     )
+    merge_videos = (
+        MergeVideosSpec.from_payload(parameters)
+        if job_operation is JobOperation.MERGE_VIDEOS
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -186,6 +198,10 @@ def process_media_job(
         replace_audio=replace_audio,
         cropper=get_crop_service() if crop else None,
         crop=crop,
+        merge_videos_service=(
+            get_merge_videos_service() if merge_videos else None
+        ),
+        merge_videos=merge_videos,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -227,6 +243,8 @@ def execute_media_job(
     replace_audio: ReplaceAudioSpec | None = None,
     cropper: CropService | None = None,
     crop: CropSpec | None = None,
+    merge_videos_service: MergeVideosService | None = None,
+    merge_videos: MergeVideosSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -239,6 +257,8 @@ def execute_media_job(
     speed_profile: SpeedProfile | None = None
     replace_audio_profile: ReplaceAudioProfile | None = None
     crop_profile: CropProfile | None = None
+    merge_profile: MergeVideosProfile | None = None
+    merge_input_paths = None
     external_audio_path = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
@@ -247,7 +267,19 @@ def execute_media_job(
         operation.value,
     )
     try:
-        input_path = asyncio.run(storage.resolve_upload(media_id, allowed_extensions))
+        if operation is JobOperation.MERGE_VIDEOS:
+            if merge_videos_service is None or merge_videos is None:
+                raise ValueError("Merge-video dependencies are unavailable")
+            try:
+                merge_input_paths = [
+                    asyncio.run(storage.resolve_upload(item, allowed_extensions))
+                    for item in merge_videos.media_ids
+                ]
+            except MediaNotFoundError as exc:
+                raise MergeMediaNotFoundError from exc
+            input_path = merge_input_paths[0]
+        else:
+            input_path = asyncio.run(storage.resolve_upload(media_id, allowed_extensions))
         if operation.canonical is JobOperation.CONVERT:
             if converter is None or conversion is None:
                 raise ValueError("Conversion dependencies are unavailable")
@@ -304,6 +336,11 @@ def execute_media_job(
                 raise ValueError("Crop dependencies are unavailable")
             crop_profile = cropper.resolve_profile(input_path, crop)
             extension = crop_profile.media.extension
+        elif operation is JobOperation.MERGE_VIDEOS:
+            if merge_videos_service is None or merge_input_paths is None:
+                raise ValueError("Merge-video dependencies are unavailable")
+            merge_profile = merge_videos_service.resolve_profile(merge_input_paths)
+            extension = merge_profile.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -355,6 +392,12 @@ def execute_media_job(
             )
         elif operation is JobOperation.CROP:
             cropper.crop(input_path, target.temporary_path, crop, crop_profile)
+        elif operation is JobOperation.MERGE_VIDEOS:
+            merge_videos_service.merge(
+                merge_input_paths,
+                target.temporary_path,
+                merge_profile,
+            )
         else:
             raise ValueError("Unsupported processing operation")
         storage.finalize_output(target)
