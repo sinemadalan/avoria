@@ -339,7 +339,10 @@ def execute_media_job(
         elif operation is JobOperation.MERGE_VIDEOS:
             if merge_videos_service is None or merge_input_paths is None:
                 raise ValueError("Merge-video dependencies are unavailable")
-            merge_profile = merge_videos_service.resolve_profile(merge_input_paths)
+            merge_profile = merge_videos_service.resolve_profile(
+                merge_input_paths,
+                merge_videos,
+            )
             extension = merge_profile.extension
         else:
             raise ValueError("Unsupported processing operation")

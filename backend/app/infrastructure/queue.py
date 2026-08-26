@@ -36,6 +36,7 @@ from backend.app.processing.merge_videos import (
     IncompatibleMergeVideosError,
     InvalidMergeInputCountError,
     InvalidMergeMetadataError,
+    InvalidMergeTargetAspectRatioError,
     MergeMediaHasNoVideoError,
     MergeMediaNotFoundError,
     UnsupportedMergeContainerError,
@@ -212,6 +213,8 @@ def _error_message(
 
 
 def _public_failure_message(info: Any, operation: JobOperation) -> str:
+    if isinstance(info, InvalidMergeTargetAspectRatioError):
+        return "The selected merge aspect ratio is invalid"
     if isinstance(info, UnsupportedCompressionContainerError):
         if operation is JobOperation.REPLACE_AUDIO:
             return "Audio replacement is not supported for the target container"
@@ -263,7 +266,7 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
     if isinstance(info, InvalidMergeMetadataError):
         return "Selected video metadata could not be validated"
     if isinstance(info, UnsupportedMergeContainerError):
-        return "The selected container cannot be merged directly"
+        return "The selected container is not supported for video merge"
     if isinstance(info, CropMediaHasNoVideoError):
         return "The input does not contain a video stream"
     if isinstance(info, InvalidCropDimensionsError):

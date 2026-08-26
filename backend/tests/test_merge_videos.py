@@ -26,11 +26,15 @@ from backend.app.processing.merge_videos import (
     MergeVideosProfile,
     MergeVideosService,
     MergeVideosSpec,
+    MergeTargetAspectRatio,
     UnsupportedMergeContainerError,
     build_concat_manifest,
     build_merge_command,
+    build_normalize_command,
+    resolve_target_aspect_ratio,
     validate_merge_compatibility,
 )
+from backend.app.processing.aspect_ratios import OutputAspectRatio
 from backend.app.processing.probe import (
     MediaInspection,
     SyncFFprobeInspector,
@@ -85,23 +89,58 @@ def inspection(
 def test_merge_schema_accepts_two_or_more_ordered_ids(count: int) -> None:
     media_ids = [str(uuid4()) for _ in range(count)]
     request = JobCreateRequest.model_validate(
-        {"operation": "merge_videos", "parameters": {"media_ids": media_ids}}
+        {"operation": "merge_videos", "parameters": {"media_ids": media_ids, "target_aspect_ratio": "16:9"}}
     )
     assert request.media_id is None
-    assert request.to_payload() == {"media_ids": media_ids}
+    assert request.to_payload() == {"media_ids": media_ids, "target_aspect_ratio": "16:9"}
+
+
+@pytest.mark.parametrize("ratio", ["16:9", "9:16", "1:1", "4:5", "first_video"])
+def test_merge_schema_accepts_supported_target_ratios(ratio: str) -> None:
+    media_ids = [str(uuid4()), str(uuid4())]
+    parameters = MergeVideosParameters.model_validate(
+        {"media_ids": media_ids, "target_aspect_ratio": ratio}
+    )
+    assert parameters.to_payload()["target_aspect_ratio"] == ratio
+
+
+@pytest.mark.parametrize("ratio", ["3:2", "", None, 1])
+def test_merge_schema_rejects_invalid_target_ratio(ratio: object) -> None:
+    with pytest.raises(ValidationError):
+        MergeVideosParameters.model_validate(
+            {"media_ids": [str(uuid4()), str(uuid4())], "target_aspect_ratio": ratio}
+        )
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected"),
+    [
+        (1920, 1080, OutputAspectRatio.LANDSCAPE),
+        (1080, 1920, OutputAspectRatio.PORTRAIT),
+        (1000, 1000, OutputAspectRatio.SQUARE),
+        (1080, 1350, OutputAspectRatio.SOCIAL_PORTRAIT),
+    ],
+)
+def test_first_video_maps_to_nearest_preset(
+    width: int, height: int, expected: OutputAspectRatio
+) -> None:
+    assert resolve_target_aspect_ratio(
+        MergeTargetAspectRatio.FIRST_VIDEO,
+        inspection(width=width, height=height),
+    ) is expected
 
 
 @pytest.mark.parametrize("media_ids", [[], [str(uuid4())]])
 def test_merge_schema_rejects_fewer_than_two_ids(media_ids: list[str]) -> None:
     with pytest.raises(ValidationError):
-        MergeVideosParameters.model_validate({"media_ids": media_ids})
+        MergeVideosParameters.model_validate({"media_ids": media_ids, "target_aspect_ratio": "16:9"})
 
 
 @pytest.mark.parametrize(
     "parameters",
     [
-        {"media_ids": [str(uuid4()), "invalid"]},
-        {"media_ids": [str(uuid4()), str(uuid4())], "transition": "fade"},
+        {"media_ids": [str(uuid4()), "invalid"], "target_aspect_ratio": "16:9"},
+        {"media_ids": [str(uuid4()), str(uuid4())], "target_aspect_ratio": "16:9", "transition": "fade"},
     ],
 )
 def test_merge_schema_rejects_invalid_ids_and_extra_fields(
@@ -117,7 +156,7 @@ def test_merge_parameters_are_rejected_for_another_operation() -> None:
             {
                 "media_id": str(uuid4()),
                 "operation": "mute",
-                "parameters": {"media_ids": [str(uuid4()), str(uuid4())]},
+                "parameters": {"media_ids": [str(uuid4()), str(uuid4())], "target_aspect_ratio": "16:9"},
             }
         )
 
@@ -216,6 +255,47 @@ def test_different_containers_are_rejected() -> None:
         )
 
 
+def test_normalization_profile_accepts_mixed_dimensions_fps_audio_and_containers() -> None:
+    paths = [Path("a.mp4"), Path("b.mov")]
+    service = MergeVideosService(
+        "ffmpeg",
+        StubInspector([
+            inspection(width=1920, height=1080, frame_rate="30/1", sample_rate="44100", channels=1, channel_layout="mono"),
+            inspection(width=1080, height=1920, frame_rate="30000/1001", audio=False),
+        ]),  # type: ignore[arg-type]
+        ManifestCapturingRunner(),  # type: ignore[arg-type]
+        LocalFFmpegCapabilities(frozenset({"libx264", "aac"}), frozenset({"mp4"})),
+    )
+    profile = service.resolve_profile(
+        paths,
+        MergeVideosSpec((str(uuid4()), str(uuid4())), MergeTargetAspectRatio.PORTRAIT),
+    )
+    assert (profile.output_width, profile.output_height) == (1080, 1920)
+    assert profile.has_audio is True
+    assert profile.direct_copy is False
+    assert profile.extension == "mp4"
+
+
+def test_normalize_command_uses_fit_padding_cfr_common_pixel_format_and_silence(tmp_path: Path) -> None:
+    media = COMPRESSION_PROFILES[OutputContainer.MP4]
+    profile = MergeVideosProfile(
+        "mp4", "mp4", media, True, OutputAspectRatio.PORTRAIT,
+        1080, 1920, (), False,
+    )
+    command = build_normalize_command(
+        "ffmpeg", tmp_path / "input.mp4", tmp_path / "output.mp4", profile, False
+    )
+    video_filter = command[command.index("-vf") + 1]
+    assert "force_original_aspect_ratio=decrease" in video_filter
+    assert "pad=1080:1920" in video_filter
+    assert "setsar=1" in video_filter
+    assert "fps=30" in video_filter
+    assert "format=yuv420p" in video_filter
+    assert "anullsrc=r=48000:cl=stereo" in command
+    assert command[command.index("-ar") + 1] == "48000"
+    assert command[command.index("-ac") + 1] == "2"
+
+
 def test_manifest_and_command_preserve_request_order(tmp_path: Path) -> None:
     paths = [tmp_path / "B.mp4", tmp_path / "A.mp4", tmp_path / "C.mp4"]
     manifest = build_concat_manifest(paths)
@@ -258,12 +338,27 @@ class ManifestCapturingRunner:
             raise self.error
 
 
+class NormalizationRunner:
+    def __init__(self, fail_on_call: int) -> None:
+        self.calls = 0
+        self.fail_on_call = fail_on_call
+
+    def run(self, command: list[str]) -> None:
+        self.calls += 1
+        if self.calls == self.fail_on_call:
+            raise FFmpegConversionError("private normalization diagnostic")
+        Path(command[-1]).write_bytes(b"segment")
+
+
 def service_with_runner(runner: ManifestCapturingRunner) -> MergeVideosService:
     return MergeVideosService(
         "ffmpeg",
-        StubInspector([inspection(), inspection()]),  # type: ignore[arg-type]
+        StubInspector([
+            inspection(width=1920, height=1080, frame_rate="30/1", sample_rate="48000", channels=2, channel_layout="stereo"),
+            inspection(width=1920, height=1080, frame_rate="30/1", sample_rate="48000", channels=2, channel_layout="stereo"),
+        ]),  # type: ignore[arg-type]
         runner,  # type: ignore[arg-type]
-        LocalFFmpegCapabilities(frozenset(), frozenset({"mp4"})),
+        LocalFFmpegCapabilities(frozenset({"libx264", "aac"}), frozenset({"mp4"})),
     )
 
 
@@ -274,7 +369,7 @@ def test_manifest_is_job_scoped_and_cleaned_on_success_or_failure(
     paths = [tmp_path / "first.mp4", tmp_path / "second.mp4"]
     runner = ManifestCapturingRunner(FFmpegConversionError("private") if fails else None)
     service = service_with_runner(runner)
-    profile = service.resolve_profile(paths)
+    profile = service.resolve_profile(paths, MergeVideosSpec(tuple(str(uuid4()) for _ in paths), MergeTargetAspectRatio.LANDSCAPE))
     output = tmp_path / f"{uuid4()}.part.mp4"
     if fails:
         with pytest.raises(FFmpegConversionError):
@@ -287,13 +382,37 @@ def test_manifest_is_job_scoped_and_cleaned_on_success_or_failure(
     assert not runner.manifest_path.exists()
 
 
+@pytest.mark.parametrize("fail_on_call", [1, 3])
+def test_normalized_segments_and_manifest_are_cleaned_after_failure(
+    fail_on_call: int, tmp_path: Path
+) -> None:
+    paths = [tmp_path / "first.mp4", tmp_path / "second.mp4"]
+    inspections = (
+        inspection(width=1280, height=720, frame_rate="30000/1001"),
+        inspection(width=1080, height=1920, audio=False),
+    )
+    runner = NormalizationRunner(fail_on_call)
+    service = MergeVideosService(
+        "ffmpeg",
+        StubInspector(list(inspections)),  # type: ignore[arg-type]
+        runner,  # type: ignore[arg-type]
+        LocalFFmpegCapabilities(frozenset({"libx264", "aac"}), frozenset({"mp4"})),
+    )
+    spec = MergeVideosSpec((str(uuid4()), str(uuid4())), MergeTargetAspectRatio.LANDSCAPE)
+    profile = service.resolve_profile(paths, spec)
+    with pytest.raises(FFmpegConversionError):
+        service.merge(paths, tmp_path / "output.part.mp4", profile)
+    assert not list(tmp_path.glob("*.normalized.mp4"))
+    assert not list(tmp_path.glob("*.concat.txt"))
+
+
 class WritingMergeService:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.resolved: list[Path] = []
         self.merged: list[Path] = []
 
-    def resolve_profile(self, paths: list[Path]) -> MergeVideosProfile:
+    def resolve_profile(self, paths: list[Path], _spec: MergeVideosSpec) -> MergeVideosProfile:
         self.resolved = paths.copy()
         return MergeVideosProfile("mp4", "mp4", COMPRESSION_PROFILES[OutputContainer.MP4], True)
 
@@ -320,7 +439,7 @@ def test_worker_resolves_in_order_atomically_finalizes_and_cleans_partial(tmp_pa
         converter=None,
         conversion=None,
         merge_videos_service=merger,  # type: ignore[arg-type]
-        merge_videos=MergeVideosSpec(tuple(ids)),
+        merge_videos=MergeVideosSpec(tuple(ids), MergeTargetAspectRatio.LANDSCAPE),
         allowed_extensions=[".mp4"],
     )
     assert [path.stem for path in merger.resolved] == ids
@@ -340,7 +459,7 @@ def test_worker_resolves_in_order_atomically_finalizes_and_cleans_partial(tmp_pa
             converter=None,
             conversion=None,
             merge_videos_service=failing,  # type: ignore[arg-type]
-            merge_videos=MergeVideosSpec(tuple(ids)),
+            merge_videos=MergeVideosSpec(tuple(ids), MergeTargetAspectRatio.LANDSCAPE),
             allowed_extensions=[".mp4"],
         )
     assert not (tmp_path / "outputs" / f"{failed_id}.part.mp4").exists()
@@ -366,11 +485,11 @@ def test_celery_worker_dispatches_merge(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(tasks_module, "execute_media_job", capture)
     process_media_job.push_request(id=job_id)
     try:
-        process_media_job.run(ids[0], "merge_videos", {"media_ids": ids})
+        process_media_job.run(ids[0], "merge_videos", {"media_ids": ids, "target_aspect_ratio": "16:9"})
     finally:
         process_media_job.pop_request()
     assert captured["merge_videos_service"] is merger
-    assert captured["merge_videos"] == MergeVideosSpec(tuple(ids))
+    assert captured["merge_videos"] == MergeVideosSpec(tuple(ids), MergeTargetAspectRatio.LANDSCAPE)
 
 
 def test_merge_errors_map_to_safe_messages() -> None:
@@ -380,42 +499,57 @@ def test_merge_errors_map_to_safe_messages() -> None:
     assert _public_failure_message(MergeMediaNotFoundError(), JobOperation.MERGE_VIDEOS) == "One of the selected media files was not found"
 
 
-def test_real_ffmpeg_merge_preserves_audio_and_summed_duration(tmp_path: Path) -> None:
+def test_real_ffmpeg_normalizes_mixed_phone_videos(tmp_path: Path) -> None:
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if ffmpeg is None or ffprobe is None:
         pytest.skip("FFmpeg and FFprobe are required for integration tests")
     colors = ["red", "green", "blue"]
+    sizes = ["1920x1080", "1280x720", "1080x1920"]
+    rates = ["30", "30000/1001", "30"]
     inputs = [tmp_path / f"{index}.mp4" for index in range(len(colors))]
-    for path, color in zip(inputs, colors, strict=True):
-        subprocess.run(
-            [
-                ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                "-f", "lavfi", "-i", f"color={color}:size=96x64:rate=25:duration=1",
-                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=1",
-                "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                "-ar", "44100", "-ac", "1", str(path),
-            ],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
+    for index, (path, color, size, rate) in enumerate(zip(inputs, colors, sizes, rates, strict=True)):
+        command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", f"color={color}:size={size}:rate={rate}:duration=0.5",
+        ]
+        if index != 2:
+            sample_rate = "48000" if index == 0 else "44100"
+            command.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"sine=frequency=440:sample_rate={sample_rate}:duration=0.5",
+                    "-shortest",
+                ]
+            )
+        command.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        if index != 2:
+            command.extend(["-c:a", "aac", "-ac", "2"])
+        command.append(str(path))
+        subprocess.run(command, check=True, capture_output=True, timeout=30)
     output = tmp_path / "merged.part.mp4"
     service = MergeVideosService(
         ffmpeg,
         SyncFFprobeInspector(ffprobe, 30),
         FFmpegRunner(60),
-        LocalFFmpegCapabilities(frozenset(), frozenset({"mp4"})),
+        LocalFFmpegCapabilities(frozenset({"libx264", "aac"}), frozenset({"mp4"})),
     )
-    profile = service.resolve_profile(inputs)
+    profile = service.resolve_profile(inputs, MergeVideosSpec(tuple(str(uuid4()) for _ in inputs), MergeTargetAspectRatio.LANDSCAPE))
     service.merge(inputs, output, profile)
     result = SyncFFprobeInspector(ffprobe, 30).inspect(output)
     assert result.video_streams
     assert result.audio_streams
     assert "mp4" in (result.format.name or "")
-    assert result.format.duration_seconds == pytest.approx(3, abs=0.2)
+    assert (result.video_streams[0].width, result.video_streams[0].height) == (1920, 1080)
+    assert result.video_streams[0].frame_rate == pytest.approx(30, abs=0.01)
+    assert result.video_streams[0].pixel_format == "yuv420p"
+    assert result.audio_streams[0].sample_rate == 48000
+    assert result.audio_streams[0].channels == 2
+    assert result.format.duration_seconds == pytest.approx(1.5, abs=0.25)
     assert output.stat().st_size > 0
     sampled_pixels: list[bytes] = []
-    for timestamp in (0.25, 1.25, 2.25):
+    for timestamp in (0.2, 0.7, 1.2):
         sampled = subprocess.run(
             [
                 ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", str(timestamp),
@@ -431,3 +565,71 @@ def test_real_ffmpeg_merge_preserves_audio_and_summed_duration(tmp_path: Path) -
     assert red[0] > red[1] and red[0] > red[2]
     assert green[1] > green[0] and green[1] > green[2]
     assert blue[2] > blue[0] and blue[2] > blue[1]
+    assert not list(tmp_path.glob("*.normalized.mp4"))
+    assert not list(tmp_path.glob("*.concat.txt"))
+
+
+def test_real_ffmpeg_portrait_canvas_fits_without_stretch_and_preserves_order(
+    tmp_path: Path,
+) -> None:
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("FFmpeg and FFprobe are required for integration tests")
+    inputs = [tmp_path / "horizontal.mp4", tmp_path / "vertical.mp4"]
+    for path, source in zip(
+        inputs,
+        [
+            "color=red:size=1920x1080:rate=30:duration=0.4",
+            "color=green:size=1080x1920:rate=30:duration=0.4",
+        ],
+        strict=True,
+    ):
+        subprocess.run(
+            [
+                ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", source,
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    output = tmp_path / "portrait.part.mp4"
+    service = MergeVideosService(
+        ffmpeg,
+        SyncFFprobeInspector(ffprobe, 30),
+        FFmpegRunner(60),
+        LocalFFmpegCapabilities(frozenset({"libx264", "aac"}), frozenset({"mp4"})),
+    )
+    profile = service.resolve_profile(
+        inputs,
+        MergeVideosSpec(
+            (str(uuid4()), str(uuid4())), MergeTargetAspectRatio.PORTRAIT
+        ),
+    )
+    service.merge(inputs, output, profile)
+    result = SyncFFprobeInspector(ffprobe, 30).inspect(output)
+    assert (result.video_streams[0].width, result.video_streams[0].height) == (1080, 1920)
+    assert result.video_streams[0].frame_rate == pytest.approx(30, abs=0.01)
+    assert not result.audio_streams
+
+    def pixel(timestamp: float, x: int, y: int) -> bytes:
+        sampled = subprocess.run(
+            [
+                ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", str(timestamp),
+                "-i", str(output), "-frames:v", "1",
+                "-vf", f"crop=2:2:{x}:{y},scale=1:1", "-pix_fmt", "rgb24",
+                "-f", "rawvideo", "-",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        return sampled.stdout[:3]
+
+    top_padding = pixel(0.15, 540, 10)
+    first_center = pixel(0.15, 540, 960)
+    second_center = pixel(0.55, 540, 960)
+    assert max(top_padding) < 20
+    assert first_center[0] > first_center[1] and first_center[0] > first_center[2]
+    assert second_center[1] > second_center[0] and second_center[1] > second_center[2]

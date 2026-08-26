@@ -35,6 +35,7 @@ from backend.app.processing.crop import (
     normalize_hex_color,
 )
 from backend.app.processing.replace_audio import ReplaceAudioSpec
+from backend.app.processing.merge_videos import MergeTargetAspectRatio, MergeVideosSpec
 from backend.app.processing.speed import InvalidSpeedError, SpeedSpec
 from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
 from backend.app.processing.volume import InvalidVolumeError, VolumeSpec
@@ -224,6 +225,7 @@ class MergeVideosParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     media_ids: list[StrictStr]
+    target_aspect_ratio: MergeTargetAspectRatio
 
     @field_validator("media_ids")
     @classmethod
@@ -238,8 +240,11 @@ class MergeVideosParameters(BaseModel):
                 raise ValueError("media_ids must contain valid UUIDs") from exc
         return canonical
 
-    def to_payload(self) -> dict[str, list[str]]:
-        return {"media_ids": self.media_ids.copy()}
+    def to_spec(self) -> MergeVideosSpec:
+        return MergeVideosSpec(tuple(self.media_ids), self.target_aspect_ratio)
+
+    def to_payload(self) -> dict[str, object]:
+        return self.to_spec().to_payload()
 
 
 class JobCreateRequest(BaseModel):

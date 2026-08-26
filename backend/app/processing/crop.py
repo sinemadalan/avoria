@@ -3,8 +3,12 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, Mapping
+
+from backend.app.processing.aspect_ratios import (
+    OUTPUT_DIMENSIONS,
+    OutputAspectRatio,
+)
 
 from backend.app.core.config import get_settings
 from backend.app.processing.compression import (
@@ -23,10 +27,10 @@ from backend.app.processing.tools import get_media_tool_paths
 
 
 class CropAspectRatio(str, Enum):
-    LANDSCAPE = "16:9"
-    PORTRAIT = "9:16"
-    SQUARE = "1:1"
-    SOCIAL_PORTRAIT = "4:5"
+    LANDSCAPE = OutputAspectRatio.LANDSCAPE.value
+    PORTRAIT = OutputAspectRatio.PORTRAIT.value
+    SQUARE = OutputAspectRatio.SQUARE.value
+    SOCIAL_PORTRAIT = OutputAspectRatio.SOCIAL_PORTRAIT.value
 
     @property
     def dimensions(self) -> tuple[int, int]:
@@ -34,14 +38,7 @@ class CropAspectRatio(str, Enum):
         return int(width), int(height)
 
 
-CROP_OUTPUT_DIMENSIONS: Mapping[CropAspectRatio, tuple[int, int]] = MappingProxyType(
-    {
-        CropAspectRatio.LANDSCAPE: (1920, 1080),
-        CropAspectRatio.PORTRAIT: (1080, 1920),
-        CropAspectRatio.SQUARE: (1080, 1080),
-        CropAspectRatio.SOCIAL_PORTRAIT: (1080, 1350),
-    }
-)
+CROP_OUTPUT_DIMENSIONS = OUTPUT_DIMENSIONS
 
 
 class CropMode(str, Enum):
@@ -172,7 +169,7 @@ def calculate_output_dimensions(
 ) -> tuple[int, int]:
     if source_width <= 0 or source_height <= 0:
         raise InvalidCropDimensionsError("Media inspection failed")
-    return CROP_OUTPUT_DIMENSIONS[aspect_ratio]
+    return OUTPUT_DIMENSIONS[OutputAspectRatio(aspect_ratio.value)]
 
 
 def calculate_crop_dimensions(

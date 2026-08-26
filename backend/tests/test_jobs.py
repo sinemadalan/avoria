@@ -1323,7 +1323,10 @@ def test_create_merge_job_preserves_requested_order(
         "/api/v1/jobs",
         json={
             "operation": "merge_videos",
-            "parameters": {"media_ids": media_ids},
+            "parameters": {
+                "media_ids": media_ids,
+                "target_aspect_ratio": "16:9",
+            },
         },
     )
 
@@ -1332,7 +1335,7 @@ def test_create_merge_job_preserves_requested_order(
     assert queue.enqueued[-1][1:] == (
         media_ids[0],
         JobOperation.MERGE_VIDEOS,
-        {"media_ids": media_ids},
+        {"media_ids": media_ids, "target_aspect_ratio": "16:9"},
     )
 
 
@@ -1347,7 +1350,10 @@ def test_create_merge_job_rejects_missing_media_before_queue(
         "/api/v1/jobs",
         json={
             "operation": "merge_videos",
-            "parameters": {"media_ids": [existing, missing]},
+            "parameters": {
+                "media_ids": [existing, missing],
+                "target_aspect_ratio": "16:9",
+            },
         },
     )
 
