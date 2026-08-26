@@ -26,6 +26,7 @@ from backend.app.processing.conversion import (
     VideoCodec,
     validate_compatibility,
 )
+from backend.app.processing.crop import CropAspectRatio, CropMode, CropSpec
 from backend.app.processing.replace_audio import ReplaceAudioSpec
 from backend.app.processing.speed import InvalidSpeedError, SpeedSpec
 from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
@@ -172,6 +173,19 @@ class ReplaceAudioParameters(BaseModel):
         return self.to_spec().to_payload()
 
 
+class CropParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    aspect_ratio: CropAspectRatio
+    mode: CropMode
+
+    def to_spec(self) -> CropSpec:
+        return CropSpec(aspect_ratio=self.aspect_ratio, mode=self.mode)
+
+    def to_payload(self) -> dict[str, str]:
+        return self.to_spec().to_payload()
+
+
 class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -186,6 +200,7 @@ class JobCreateRequest(BaseModel):
         | TrimParameters
         | SpeedParameters
         | ReplaceAudioParameters
+        | CropParameters
     )
     format: AudioExtractionFormat | None = None
 
@@ -216,6 +231,8 @@ class JobCreateRequest(BaseModel):
             JobOperation.REPLACE_AUDIO.value,
         }:
             model = ReplaceAudioParameters
+        elif operation in {JobOperation.CROP, JobOperation.CROP.value}:
+            model = CropParameters
         else:
             model = ConvertParameters
         return {**value, "parameters": model.model_validate(parameters)}
@@ -236,6 +253,8 @@ class JobCreateRequest(BaseModel):
             expected = SpeedParameters
         elif self.operation is JobOperation.REPLACE_AUDIO:
             expected = ReplaceAudioParameters
+        elif self.operation is JobOperation.CROP:
+            expected = CropParameters
         else:
             expected = ConvertParameters
         if not isinstance(self.parameters, expected):

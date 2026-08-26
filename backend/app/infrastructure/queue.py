@@ -25,6 +25,11 @@ from backend.app.processing.audio_extraction import (
 )
 from backend.app.processing.compression import UnsupportedCompressionContainerError
 from backend.app.processing.conversion import FFmpegConversionError, InvalidConversionError
+from backend.app.processing.crop import (
+    CropMediaHasNoVideoError,
+    InvalidCropDimensionsError,
+    InvalidCropSpecError,
+)
 from backend.app.processing.mute import MediaHasNoVideoError
 from backend.app.processing.replace_audio import (
     ExternalAudioInspectionError,
@@ -209,6 +214,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
             return "Trim is not supported for this container"
         if operation is JobOperation.SPEED:
             return "Speed is not supported for this container"
+        if operation is JobOperation.CROP:
+            return "Crop is not supported for this container"
         return "Compression is not supported for this container"
     if isinstance(info, UnsupportedAudioContainerError):
         if operation is JobOperation.REPLACE_AUDIO:
@@ -234,6 +241,12 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Target media inspection failed"
     if isinstance(info, MediaHasNoVideoError):
         return "The input does not contain a video stream"
+    if isinstance(info, CropMediaHasNoVideoError):
+        return "The input does not contain a video stream"
+    if isinstance(info, InvalidCropDimensionsError):
+        return "Media inspection failed"
+    if isinstance(info, InvalidCropSpecError):
+        return "Invalid crop parameters"
     if isinstance(info, InvalidVolumeError):
         return str(info)
     if isinstance(info, InvalidSpeedError):
@@ -250,7 +263,7 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Media inspection failed"
     if isinstance(info, MediaHasNoSpeedStreamError):
         return "Media has no audio/video stream"
-    if operation in {JobOperation.TRIM, JobOperation.SPEED} and isinstance(
+    if operation in {JobOperation.TRIM, JobOperation.SPEED, JobOperation.CROP} and isinstance(
         info,
         (
             InvalidMediaError,
@@ -274,6 +287,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
         return "Speed processing failed"
     if operation is JobOperation.REPLACE_AUDIO:
         return "Audio replacement failed"
+    if operation is JobOperation.CROP:
+        return "Crop processing failed"
     if isinstance(info, InvalidConversionError):
         return str(info)
     if isinstance(info, FFmpegConversionError):

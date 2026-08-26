@@ -35,6 +35,12 @@ from backend.app.processing.conversion import (
     FFmpegConversionError,
     get_conversion_service,
 )
+from backend.app.processing.crop import (
+    CropProfile,
+    CropService,
+    CropSpec,
+    get_crop_service,
+)
 from backend.app.processing.mute import MuteService, get_mute_service
 from backend.app.processing.replace_audio import (
     ExternalAudioMediaNotFoundError,
@@ -125,6 +131,11 @@ def process_media_job(
         if job_operation is JobOperation.REPLACE_AUDIO
         else None
     )
+    crop = (
+        CropSpec.from_payload(parameters)
+        if job_operation is JobOperation.CROP
+        else None
+    )
     logger.info(
         "Processing task received task_id=%s media_id=%s operation=%s",
         job_id,
@@ -173,6 +184,8 @@ def process_media_job(
         speed=speed,
         audio_replacer=get_replace_audio_service() if replace_audio else None,
         replace_audio=replace_audio,
+        cropper=get_crop_service() if crop else None,
+        crop=crop,
         allowed_extensions=settings.allowed_media_extensions,
     )
     logger.info(
@@ -212,6 +225,8 @@ def execute_media_job(
     speed: SpeedSpec | None = None,
     audio_replacer: ReplaceAudioService | None = None,
     replace_audio: ReplaceAudioSpec | None = None,
+    cropper: CropService | None = None,
+    crop: CropSpec | None = None,
 ) -> dict[str, Any]:
     started_at = monotonic()
     target: OutputTarget | None = None
@@ -223,6 +238,7 @@ def execute_media_job(
     trim_profile: TrimProfile | None = None
     speed_profile: SpeedProfile | None = None
     replace_audio_profile: ReplaceAudioProfile | None = None
+    crop_profile: CropProfile | None = None
     external_audio_path = None
     logger.info(
         "Processing job started job_id=%s media_id=%s operation=%s",
@@ -283,6 +299,11 @@ def execute_media_job(
                 external_audio_path,
             )
             extension = replace_audio_profile.target.extension
+        elif operation is JobOperation.CROP:
+            if cropper is None or crop is None:
+                raise ValueError("Crop dependencies are unavailable")
+            crop_profile = cropper.resolve_profile(input_path, crop)
+            extension = crop_profile.media.extension
         else:
             raise ValueError("Unsupported processing operation")
         target = storage.prepare_output(job_id, f".{extension}")
@@ -324,7 +345,7 @@ def execute_media_job(
                 speed,
                 speed_profile,
             )
-        else:
+        elif operation is JobOperation.REPLACE_AUDIO:
             audio_replacer.replace(
                 input_path,
                 external_audio_path,
@@ -332,6 +353,10 @@ def execute_media_job(
                 replace_audio_profile,
                 loop=replace_audio.loop,
             )
+        elif operation is JobOperation.CROP:
+            cropper.crop(input_path, target.temporary_path, crop, crop_profile)
+        else:
+            raise ValueError("Unsupported processing operation")
         storage.finalize_output(target)
     except FFmpegConversionError as exc:
         _cleanup_partial(storage, target, job_id)

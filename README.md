@@ -2,7 +2,7 @@
 
 Avoria is a local-first media processing platform foundation built as a modular monolith with a separate Celery worker process.
 
-The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, frame-accurate trim/cut, playback speed control, and external audio replacement through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
+The backend supports media upload, FFprobe inspection, user-selectable media conversion, video compression, multi-format audio extraction, stream-copy video muting, volume adjustment, frame-accurate trim/cut, playback speed control, preset aspect-ratio crop/fit, and external audio replacement through RabbitMQ, Celery, and FFmpeg. Processing job history is not persisted to SQLite.
 
 ## Architecture
 
@@ -212,6 +212,27 @@ streams are re-encoded with the existing centralized video/audio profiles.
 Subtitle and data streams are omitted. Speed is a standalone operation: trim,
 mute, volume, compression, and processing pipelines are not prerequisites.
 
+Crop or fit a video to one of the supported preset aspect ratios:
+
+```json
+{
+  "media_id": "550e8400-e29b-41d4-a716-446655440000",
+  "operation": "crop",
+  "parameters": {
+    "aspect_ratio": "9:16",
+    "mode": "crop"
+  }
+}
+```
+
+`aspect_ratio` is required and accepts `16:9`, `9:16`, `1:1`, or `4:5`.
+`mode` is required: `crop` keeps a centered rectangle and removes overflow;
+`fit` preserves the complete frame with proportional downscaling and black
+padding. The largest exact-ratio canvas that fits within the source dimensions
+is used, with both dimensions normalized down to even values. Video uses the
+existing source-container encoding profile, while existing audio streams are
+copied unchanged. Audio-only media is rejected during worker-side inspection.
+
 Replace every existing target-video audio stream with one uploaded audio file:
 
 ```json
@@ -299,7 +320,7 @@ The conversion development flow is:
 Upload -> Inspect -> Conversion options -> Create job -> Poll job status -> Check output
 ```
 
-Audio extraction, compression, mute, volume adjustment, trim, speed control, and external audio replacement use the same processing queue without the conversion-options step:
+Audio extraction, compression, mute, volume adjustment, trim, speed control, crop/fit, and external audio replacement use the same processing queue without the conversion-options step:
 
 ```text
 Upload -> Inspect -> Create processing job -> Poll job status -> Check output
