@@ -19,6 +19,7 @@ from backend.app.processing.conversion import (
 )
 from backend.app.processing.crop import (
     BLUR_SIGMA,
+    CROP_OUTPUT_DIMENSIONS,
     CropAspectRatio,
     CropBackgroundType,
     CropMediaHasNoVideoError,
@@ -32,6 +33,7 @@ from backend.app.processing.crop import (
     build_crop_filter,
     build_fit_blur_filter,
     build_fit_color_filter,
+    calculate_crop_dimensions,
     calculate_output_dimensions,
     normalize_hex_color,
 )
@@ -243,23 +245,31 @@ def test_hex_normalizer_rejects_non_rrggbb_values(value: str) -> None:
     ("aspect_ratio", "expected"),
     [
         (CropAspectRatio.LANDSCAPE, (1920, 1080)),
-        (CropAspectRatio.PORTRAIT, (594, 1056)),
+        (CropAspectRatio.PORTRAIT, (1080, 1920)),
         (CropAspectRatio.SQUARE, (1080, 1080)),
-        (CropAspectRatio.SOCIAL_PORTRAIT, (864, 1080)),
+        (CropAspectRatio.SOCIAL_PORTRAIT, (1080, 1350)),
     ],
 )
-def test_dimensions_are_largest_exact_even_rectangle_within_source(
+def test_output_dimensions_use_central_aspect_ratio_presets(
     aspect_ratio: CropAspectRatio, expected: tuple[int, int]
 ) -> None:
     result = calculate_output_dimensions(1920, 1080, aspect_ratio)
     assert result == expected
+    assert CROP_OUTPUT_DIMENSIONS[aspect_ratio] == expected
     assert result[0] % 2 == 0 and result[1] % 2 == 0
 
 
-def test_odd_source_dimensions_are_normalized_down_to_even_exact_ratio() -> None:
-    assert calculate_output_dimensions(1919, 1079, CropAspectRatio.LANDSCAPE) == (
+def test_crop_area_is_normalized_down_to_even_exact_ratio() -> None:
+    assert calculate_crop_dimensions(1919, 1079, CropAspectRatio.LANDSCAPE) == (
         1888,
         1062,
+    )
+
+
+def test_small_source_still_resolves_to_full_preset_for_upscaling() -> None:
+    assert calculate_output_dimensions(640, 360, CropAspectRatio.PORTRAIT) == (
+        1080,
+        1920,
     )
 
 
@@ -279,10 +289,12 @@ def test_command_builder_supports_every_ratio_and_mode(
     )
     filter_value = command[command.index("-vf") + 1]
     if mode is CropMode.CROP:
-        assert filter_value.startswith(
-            f"crop={selected.output_width}:{selected.output_height}:"
+        crop_width, crop_height = calculate_crop_dimensions(
+            selected.source_width, selected.source_height, aspect_ratio
         )
-        assert "scale=" not in filter_value and "pad=" not in filter_value
+        assert filter_value.startswith(f"crop={crop_width}:{crop_height}:")
+        assert f"scale={selected.output_width}:{selected.output_height}" in filter_value
+        assert "pad=" not in filter_value
     else:
         assert filter_value.startswith(
             f"scale={selected.output_width}:{selected.output_height}:"
@@ -299,7 +311,23 @@ def test_crop_filter_is_centered_for_landscape_to_portrait() -> None:
     selected = profile(CropAspectRatio.PORTRAIT)
     assert build_crop_filter(
         CropSpec(CropAspectRatio.PORTRAIT, CropMode.CROP), selected
-    ) == "crop=594:1056:663:12,setsar=1"
+    ) == "crop=594:1056:663:12,scale=1080:1920,setsar=1"
+
+
+def test_crop_filter_centers_portrait_source_for_landscape_output() -> None:
+    selected = profile(
+        CropAspectRatio.LANDSCAPE, source_width=1080, source_height=1920
+    )
+    assert build_crop_filter(
+        CropSpec(CropAspectRatio.LANDSCAPE, CropMode.CROP), selected
+    ) == "crop=1056:594:12:663,scale=1920:1080,setsar=1"
+
+
+def test_square_crop_scales_to_exact_square_preset() -> None:
+    selected = profile(CropAspectRatio.SQUARE)
+    assert build_crop_filter(
+        CropSpec(CropAspectRatio.SQUARE, CropMode.CROP), selected
+    ) == "crop=1080:1080:420:0,scale=1080:1080,setsar=1"
 
 
 def test_color_fit_uses_normalized_safe_pad_color() -> None:
@@ -311,7 +339,7 @@ def test_color_fit_uses_normalized_safe_pad_color() -> None:
         "#7a4fd8",
     )
     filter_value = build_fit_color_filter(spec, selected)
-    assert "pad=594:1056:(ow-iw)/2:(oh-ih)/2:0x7A4FD8" in filter_value
+    assert "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:0x7A4FD8" in filter_value
     assert "#" not in filter_value
     assert filter_value.endswith("setsar=1")
 
@@ -321,12 +349,12 @@ def test_blur_fit_builds_split_fill_blur_fit_and_center_overlay_graph() -> None:
     graph = build_fit_blur_filter(selected)
     assert "[0:v:0]split=2[background][foreground]" in graph
     assert (
-        "[background]scale=594:1056:force_original_aspect_ratio=increase:"
-        "force_divisible_by=2,crop=594:1056" in graph
+        "[background]scale=1080:1920:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2,crop=1080:1920" in graph
     )
     assert f"gblur=sigma={BLUR_SIGMA}" in graph
     assert (
-        "[foreground]scale=594:1056:force_original_aspect_ratio=decrease:"
+        "[foreground]scale=1080:1920:force_original_aspect_ratio=decrease:"
         "force_divisible_by=2" in graph
     )
     assert "overlay=(W-w)/2:(H-h)/2:shortest=1" in graph
@@ -346,7 +374,7 @@ def test_blur_command_uses_complex_video_output_and_preserves_audio(tmp_path: Pa
     graph = command[command.index("-filter_complex") + 1]
     assert "-vf" not in command
     assert command[command.index("-map") + 1] == "[vout]"
-    assert "crop=594:1056" in graph and "setsar=1[vout]" in graph
+    assert "crop=1080:1920" in graph and "setsar=1[vout]" in graph
     assert "0:a?" in command
     assert command[command.index("-c:a") + 1] == "copy"
 
@@ -571,8 +599,26 @@ def test_missing_video_dimensions_are_rejected_safely() -> None:
         )
 
 
-def test_real_ffmpeg_blur_fit_preserves_dimensions_audio_and_container(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "spec",
+    [
+        CropSpec(CropAspectRatio.PORTRAIT, CropMode.CROP),
+        CropSpec(
+            CropAspectRatio.PORTRAIT,
+            CropMode.FIT,
+            CropBackgroundType.COLOR,
+            "#7A4FD8",
+        ),
+        CropSpec(
+            CropAspectRatio.PORTRAIT,
+            CropMode.FIT,
+            CropBackgroundType.BLUR,
+        ),
+    ],
+    ids=["crop", "fit-color", "fit-blur"],
+)
+def test_real_ffmpeg_landscape_to_portrait_uses_exact_preset(
+    tmp_path: Path, spec: CropSpec
 ) -> None:
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if ffmpeg is None or ffprobe is None:
@@ -589,11 +635,11 @@ def test_real_ffmpeg_blur_fit_preserves_dimensions_audio_and_container(
             "-f",
             "lavfi",
             "-i",
-            "testsrc2=size=96x64:rate=25:duration=0.5",
+            "testsrc2=size=160x90:rate=10:duration=0.2",
             "-f",
             "lavfi",
             "-i",
-            "sine=frequency=440:duration=0.5",
+            "sine=frequency=440:duration=0.2",
             "-shortest",
             "-c:v",
             "libx264",
@@ -612,15 +658,14 @@ def test_real_ffmpeg_blur_fit_preserves_dimensions_audio_and_container(
         FFmpegRunner(30),
         LocalFFmpegCapabilities(frozenset({"libx264"}), frozenset({"mp4"})),
     )
-    spec = CropSpec(
-        CropAspectRatio.PORTRAIT,
-        CropMode.FIT,
-        CropBackgroundType.BLUR,
-    )
     selected = service.resolve_profile(source, spec)
     service.crop(source, output, spec, selected)
     result = inspector.inspect(output)
-    assert (result.video_streams[0].width, result.video_streams[0].height) == (36, 64)
+    assert (selected.output_width, selected.output_height) == (1080, 1920)
+    assert (result.video_streams[0].width, result.video_streams[0].height) == (
+        1080,
+        1920,
+    )
     assert result.video_streams[0].codec_name == "h264"
     assert result.audio_streams[0].codec_name == "aac"
     assert "mp4" in (result.format.name or "")

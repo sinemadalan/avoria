@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from backend.app.core.config import get_settings
@@ -31,6 +32,16 @@ class CropAspectRatio(str, Enum):
     def dimensions(self) -> tuple[int, int]:
         width, height = self.value.split(":", maxsplit=1)
         return int(width), int(height)
+
+
+CROP_OUTPUT_DIMENSIONS: Mapping[CropAspectRatio, tuple[int, int]] = MappingProxyType(
+    {
+        CropAspectRatio.LANDSCAPE: (1920, 1080),
+        CropAspectRatio.PORTRAIT: (1080, 1920),
+        CropAspectRatio.SQUARE: (1080, 1080),
+        CropAspectRatio.SOCIAL_PORTRAIT: (1080, 1350),
+    }
+)
 
 
 class CropMode(str, Enum):
@@ -161,6 +172,16 @@ def calculate_output_dimensions(
 ) -> tuple[int, int]:
     if source_width <= 0 or source_height <= 0:
         raise InvalidCropDimensionsError("Media inspection failed")
+    return CROP_OUTPUT_DIMENSIONS[aspect_ratio]
+
+
+def calculate_crop_dimensions(
+    source_width: int,
+    source_height: int,
+    aspect_ratio: CropAspectRatio,
+) -> tuple[int, int]:
+    if source_width <= 0 or source_height <= 0:
+        raise InvalidCropDimensionsError("Media inspection failed")
     ratio_width, ratio_height = aspect_ratio.dimensions
     multiplier = min(source_width // ratio_width, source_height // ratio_height)
     # Every supported ratio has at least one odd component. An even multiplier
@@ -228,9 +249,17 @@ def build_fit_blur_filter(profile: CropProfile) -> str:
 def build_crop_filter(spec: CropSpec, profile: CropProfile) -> str:
     width, height = profile.output_width, profile.output_height
     if spec.mode is CropMode.CROP:
-        x = (profile.source_width - width) // 2
-        y = (profile.source_height - height) // 2
-        return f"crop={width}:{height}:{x}:{y},setsar=1"
+        crop_width, crop_height = calculate_crop_dimensions(
+            profile.source_width,
+            profile.source_height,
+            spec.aspect_ratio,
+        )
+        x = (profile.source_width - crop_width) // 2
+        y = (profile.source_height - crop_height) // 2
+        return (
+            f"crop={crop_width}:{crop_height}:{x}:{y},"
+            f"scale={width}:{height},setsar=1"
+        )
     if spec.background_type is CropBackgroundType.BLUR:
         return build_fit_blur_filter(profile)
     return build_fit_color_filter(spec, profile)
