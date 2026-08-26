@@ -1,4 +1,6 @@
 from pathlib import Path
+import shutil
+import subprocess
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -9,20 +11,35 @@ from backend.app.application.ports.jobs import JobOperation
 from backend.app.infrastructure.queue import _public_failure_message
 from backend.app.infrastructure.storage import LocalStorageService
 from backend.app.processing.compression import COMPRESSION_PROFILES, CompressionProfile
-from backend.app.processing.conversion import LocalFFmpegCapabilities, OutputContainer
+from backend.app.processing.conversion import (
+    FFmpegConversionError,
+    FFmpegRunner,
+    LocalFFmpegCapabilities,
+    OutputContainer,
+)
 from backend.app.processing.crop import (
+    BLUR_SIGMA,
     CropAspectRatio,
+    CropBackgroundType,
     CropMediaHasNoVideoError,
     CropMode,
     CropProfile,
     CropService,
     CropSpec,
     InvalidCropDimensionsError,
+    InvalidCropSpecError,
     build_crop_command,
     build_crop_filter,
+    build_fit_blur_filter,
+    build_fit_color_filter,
     calculate_output_dimensions,
+    normalize_hex_color,
 )
-from backend.app.processing.probe import MediaInspection, parse_ffprobe_payload
+from backend.app.processing.probe import (
+    MediaInspection,
+    SyncFFprobeInspector,
+    parse_ffprobe_payload,
+)
 from backend.app.schemas.jobs import CropParameters, JobCreateRequest
 from backend.app.workers import tasks as tasks_module
 from backend.app.workers.tasks import execute_media_job, process_media_job
@@ -61,11 +78,14 @@ class StubInspector:
 
 
 class CapturingRunner:
-    def __init__(self) -> None:
+    def __init__(self, error: Exception | None = None) -> None:
         self.command: list[str] | None = None
+        self.error = error
 
     def run(self, command: list[str]) -> None:
         self.command = command
+        if self.error is not None:
+            raise self.error
 
 
 def profile(
@@ -98,7 +118,10 @@ def test_crop_schema_accepts_only_supported_combinations(
     parameters = CropParameters.model_validate(
         {"aspect_ratio": aspect_ratio, "mode": mode}
     )
-    assert parameters.to_payload() == {"aspect_ratio": aspect_ratio, "mode": mode}
+    expected = {"aspect_ratio": aspect_ratio, "mode": mode}
+    if mode == "fit":
+        expected.update(background_type="color", background_color="#000000")
+    assert parameters.to_payload() == expected
 
 
 @pytest.mark.parametrize(
@@ -138,7 +161,82 @@ def test_crop_request_serializes_primitive_worker_payload() -> None:
         }
     )
     assert request.operation is JobOperation.CROP
-    assert request.to_payload() == {"aspect_ratio": "4:5", "mode": "fit"}
+    assert request.to_payload() == {
+        "aspect_ratio": "4:5",
+        "mode": "fit",
+        "background_type": "color",
+        "background_color": "#000000",
+    }
+
+
+@pytest.mark.parametrize("color", ["#7a4fd8", "#7A4FD8", "#000000", "#FFFFFF"])
+def test_fit_color_accepts_and_normalizes_valid_hex(color: str) -> None:
+    parameters = CropParameters.model_validate(
+        {
+            "aspect_ratio": "9:16",
+            "mode": "fit",
+            "background_type": "color",
+            "background_color": color,
+        }
+    )
+    assert parameters.background_color == color.upper()
+    assert parameters.to_payload()["background_color"] == color.upper()
+
+
+def test_fit_blur_is_valid_without_color() -> None:
+    parameters = CropParameters.model_validate(
+        {"aspect_ratio": "9:16", "mode": "fit", "background_type": "blur"}
+    )
+    assert parameters.to_payload() == {
+        "aspect_ratio": "9:16",
+        "mode": "fit",
+        "background_type": "blur",
+    }
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"aspect_ratio": "9:16", "mode": "fit", "background_type": "color"},
+        {
+            "aspect_ratio": "9:16",
+            "mode": "fit",
+            "background_type": "color",
+            "background_color": "#FFF",
+        },
+        {
+            "aspect_ratio": "9:16",
+            "mode": "fit",
+            "background_type": "color",
+            "background_color": "red",
+        },
+        {
+            "aspect_ratio": "9:16",
+            "mode": "fit",
+            "background_type": "blur",
+            "background_color": "#FFFFFF",
+        },
+        {"aspect_ratio": "9:16", "mode": "crop", "background_type": "blur"},
+        {"aspect_ratio": "9:16", "mode": "crop", "background_color": "#FFFFFF"},
+        {
+            "aspect_ratio": "9:16",
+            "mode": "fit",
+            "background_type": "blur",
+            "blur_strength": 10,
+        },
+    ],
+)
+def test_background_schema_rejects_invalid_combinations(
+    parameters: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError):
+        CropParameters.model_validate(parameters)
+
+
+@pytest.mark.parametrize("value", ["#12345G", "123456", "rgb(1,2,3)", " #123456"])
+def test_hex_normalizer_rejects_non_rrggbb_values(value: str) -> None:
+    with pytest.raises(InvalidCropSpecError, match="RRGGBB"):
+        normalize_hex_color(value)
 
 
 @pytest.mark.parametrize(
@@ -194,7 +292,7 @@ def test_command_builder_supports_every_ratio_and_mode(
             in filter_value
         )
         assert "force_original_aspect_ratio=decrease" in filter_value
-        assert ":black" in filter_value
+        assert ":0x000000" in filter_value
 
 
 def test_crop_filter_is_centered_for_landscape_to_portrait() -> None:
@@ -202,6 +300,66 @@ def test_crop_filter_is_centered_for_landscape_to_portrait() -> None:
     assert build_crop_filter(
         CropSpec(CropAspectRatio.PORTRAIT, CropMode.CROP), selected
     ) == "crop=594:1056:663:12,setsar=1"
+
+
+def test_color_fit_uses_normalized_safe_pad_color() -> None:
+    selected = profile(CropAspectRatio.PORTRAIT)
+    spec = CropSpec(
+        CropAspectRatio.PORTRAIT,
+        CropMode.FIT,
+        CropBackgroundType.COLOR,
+        "#7a4fd8",
+    )
+    filter_value = build_fit_color_filter(spec, selected)
+    assert "pad=594:1056:(ow-iw)/2:(oh-ih)/2:0x7A4FD8" in filter_value
+    assert "#" not in filter_value
+    assert filter_value.endswith("setsar=1")
+
+
+def test_blur_fit_builds_split_fill_blur_fit_and_center_overlay_graph() -> None:
+    selected = profile(CropAspectRatio.PORTRAIT)
+    graph = build_fit_blur_filter(selected)
+    assert "[0:v:0]split=2[background][foreground]" in graph
+    assert (
+        "[background]scale=594:1056:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2,crop=594:1056" in graph
+    )
+    assert f"gblur=sigma={BLUR_SIGMA}" in graph
+    assert (
+        "[foreground]scale=594:1056:force_original_aspect_ratio=decrease:"
+        "force_divisible_by=2" in graph
+    )
+    assert "overlay=(W-w)/2:(H-h)/2:shortest=1" in graph
+    assert graph.endswith("setsar=1[vout]")
+
+
+def test_blur_command_uses_complex_video_output_and_preserves_audio(tmp_path: Path) -> None:
+    command = build_crop_command(
+        "ffmpeg",
+        tmp_path / "input.mp4",
+        tmp_path / "output.part.mp4",
+        CropSpec(
+            CropAspectRatio.PORTRAIT, CropMode.FIT, CropBackgroundType.BLUR
+        ),
+        profile(CropAspectRatio.PORTRAIT),
+    )
+    graph = command[command.index("-filter_complex") + 1]
+    assert "-vf" not in command
+    assert command[command.index("-map") + 1] == "[vout]"
+    assert "crop=594:1056" in graph and "setsar=1[vout]" in graph
+    assert "0:a?" in command
+    assert command[command.index("-c:a") + 1] == "copy"
+
+
+def test_blur_video_only_command_has_no_audio_mapping(tmp_path: Path) -> None:
+    command = build_crop_command(
+        "ffmpeg",
+        tmp_path / "input.mp4",
+        tmp_path / "output.part.mp4",
+        CropSpec(CropAspectRatio.SQUARE, CropMode.FIT, CropBackgroundType.BLUR),
+        profile(CropAspectRatio.SQUARE, has_audio=False),
+    )
+    assert "-an" in command and "-c:a" not in command and "0:a?" not in command
 
 
 @pytest.mark.parametrize("container", list(COMPRESSION_PROFILES))
@@ -255,9 +413,38 @@ def test_audio_only_media_is_rejected_before_ffmpeg() -> None:
     ) == "The input does not contain a video stream"
 
 
+@pytest.mark.parametrize(
+    ("background_type", "expected_option"),
+    [
+        (CropBackgroundType.COLOR, "-vf"),
+        (CropBackgroundType.BLUR, "-filter_complex"),
+    ],
+)
+def test_fit_service_executes_color_and_blur_filters(
+    background_type: CropBackgroundType, expected_option: str
+) -> None:
+    runner = CapturingRunner()
+    service = CropService(
+        "configured-ffmpeg",
+        StubInspector(inspection()),  # type: ignore[arg-type]
+        runner,  # type: ignore[arg-type]
+        LocalFFmpegCapabilities(frozenset({"libx264"}), frozenset({"mp4"})),
+    )
+    spec = CropSpec(
+        CropAspectRatio.PORTRAIT,
+        CropMode.FIT,
+        background_type,
+        "#4F46E5" if background_type is CropBackgroundType.COLOR else None,
+    )
+    selected = service.resolve_profile(Path("video.mp4"), spec)
+    service.crop(Path("video.mp4"), Path("output.part.mp4"), spec, selected)
+    assert runner.command is not None and expected_option in runner.command
+
+
 class WritingCropper:
-    def __init__(self) -> None:
+    def __init__(self, error: Exception | None = None) -> None:
         self.calls: list[tuple[Path, Path, CropSpec, CropProfile]] = []
+        self.error = error
 
     def resolve_profile(self, _input_path: Path, spec: CropSpec) -> CropProfile:
         return profile(spec.aspect_ratio)
@@ -271,6 +458,8 @@ class WritingCropper:
     ) -> None:
         self.calls.append((input_path, output_path, spec, selected))
         output_path.write_bytes(b"cropped-video")
+        if self.error is not None:
+            raise self.error
 
 
 def test_worker_atomically_finalizes_crop_output(tmp_path: Path) -> None:
@@ -296,6 +485,37 @@ def test_worker_atomically_finalizes_crop_output(tmp_path: Path) -> None:
     assert (tmp_path / "outputs" / f"{job_id}.mp4").read_bytes() == b"cropped-video"
     assert not (tmp_path / "outputs" / f"{job_id}.part.mp4").exists()
     assert result["format"] == "mp4"
+
+
+def test_crop_ffmpeg_failure_cleans_partial_output(tmp_path: Path) -> None:
+    media_id, job_id = str(uuid4()), str(uuid4())
+    storage = LocalStorageService(
+        tmp_path / "media", tmp_path / "uploads", tmp_path / "outputs"
+    )
+    storage.initialize()
+    (tmp_path / "uploads" / f"{media_id}.mp4").write_bytes(b"source")
+    cropper = WritingCropper(FFmpegConversionError("private command and stderr"))
+    with pytest.raises(FFmpegConversionError):
+        execute_media_job(
+            job_id=job_id,
+            media_id=media_id,
+            operation=JobOperation.CROP,
+            storage=storage,
+            converter=None,
+            conversion=None,
+            cropper=cropper,  # type: ignore[arg-type]
+            crop=CropSpec(
+                CropAspectRatio.PORTRAIT,
+                CropMode.FIT,
+                CropBackgroundType.BLUR,
+            ),
+            allowed_extensions=[".mp4"],
+        )
+    assert not (tmp_path / "outputs" / f"{job_id}.part.mp4").exists()
+    assert not (tmp_path / "outputs" / f"{job_id}.mp4").exists()
+    assert _public_failure_message(
+        cropper.error, JobOperation.CROP
+    ) == "Crop processing failed"
 
 
 def test_celery_worker_dispatches_crop_service(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -349,3 +569,58 @@ def test_missing_video_dimensions_are_rejected_safely() -> None:
         service.resolve_profile(
             Path("video.mp4"), CropSpec(CropAspectRatio.SQUARE, CropMode.CROP)
         )
+
+
+def test_real_ffmpeg_blur_fit_preserves_dimensions_audio_and_container(
+    tmp_path: Path,
+) -> None:
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("FFmpeg and FFprobe are required for the integration test")
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "output.part.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=96x64:rate=25:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.5",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    inspector = SyncFFprobeInspector(ffprobe, 30)
+    service = CropService(
+        ffmpeg,
+        inspector,
+        FFmpegRunner(30),
+        LocalFFmpegCapabilities(frozenset({"libx264"}), frozenset({"mp4"})),
+    )
+    spec = CropSpec(
+        CropAspectRatio.PORTRAIT,
+        CropMode.FIT,
+        CropBackgroundType.BLUR,
+    )
+    selected = service.resolve_profile(source, spec)
+    service.crop(source, output, spec, selected)
+    result = inspector.inspect(output)
+    assert (result.video_streams[0].width, result.video_streams[0].height) == (36, 64)
+    assert result.video_streams[0].codec_name == "h264"
+    assert result.audio_streams[0].codec_name == "aac"
+    assert "mp4" in (result.format.name or "")

@@ -26,7 +26,14 @@ from backend.app.processing.conversion import (
     VideoCodec,
     validate_compatibility,
 )
-from backend.app.processing.crop import CropAspectRatio, CropMode, CropSpec
+from backend.app.processing.crop import (
+    CropAspectRatio,
+    CropBackgroundType,
+    CropMode,
+    CropSpec,
+    InvalidCropSpecError,
+    normalize_hex_color,
+)
 from backend.app.processing.replace_audio import ReplaceAudioSpec
 from backend.app.processing.speed import InvalidSpeedError, SpeedSpec
 from backend.app.processing.trim import InvalidTrimRangeError, TrimSpec
@@ -178,9 +185,36 @@ class CropParameters(BaseModel):
 
     aspect_ratio: CropAspectRatio
     mode: CropMode
+    background_type: CropBackgroundType | None = None
+    background_color: StrictStr | None = None
+
+    @field_validator("background_color")
+    @classmethod
+    def validate_background_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return normalize_hex_color(value)
+        except InvalidCropSpecError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def validate_background(self) -> "CropParameters":
+        try:
+            spec = self.to_spec()
+        except InvalidCropSpecError as exc:
+            raise ValueError(str(exc)) from exc
+        self.background_type = spec.background_type
+        self.background_color = spec.background_color
+        return self
 
     def to_spec(self) -> CropSpec:
-        return CropSpec(aspect_ratio=self.aspect_ratio, mode=self.mode)
+        return CropSpec(
+            aspect_ratio=self.aspect_ratio,
+            mode=self.mode,
+            background_type=self.background_type,
+            background_color=self.background_color,
+        )
 
     def to_payload(self) -> dict[str, str]:
         return self.to_spec().to_payload()

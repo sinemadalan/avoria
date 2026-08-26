@@ -220,18 +220,24 @@ Crop or fit a video to one of the supported preset aspect ratios:
   "operation": "crop",
   "parameters": {
     "aspect_ratio": "9:16",
-    "mode": "crop"
+    "mode": "fit",
+    "background_type": "color",
+    "background_color": "#7A4FD8"
   }
 }
 ```
 
 `aspect_ratio` is required and accepts `16:9`, `9:16`, `1:1`, or `4:5`.
 `mode` is required: `crop` keeps a centered rectangle and removes overflow;
-`fit` preserves the complete frame with proportional downscaling and black
-padding. The largest exact-ratio canvas that fits within the source dimensions
-is used, with both dimensions normalized down to even values. Video uses the
-existing source-container encoding profile, while existing audio streams are
-copied unchanged. Audio-only media is rejected during worker-side inspection.
+`fit` preserves the complete foreground frame with proportional downscaling.
+Fit backgrounds accept `color` with an exact `#RRGGBB` value or `blur`, which
+fills the canvas with a scaled, cropped, and blurred copy of the source. Omitting
+both background fields remains backward compatible and selects `color` with
+`#000000`. Background fields are not accepted in crop mode. The largest
+exact-ratio canvas that fits within the source dimensions is used, with both
+dimensions normalized down to even values. Video uses the existing
+source-container encoding profile, while existing audio streams are copied
+unchanged. Audio-only media is rejected during worker-side inspection.
 
 Replace every existing target-video audio stream with one uploaded audio file:
 

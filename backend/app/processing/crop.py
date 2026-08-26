@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
@@ -37,6 +38,16 @@ class CropMode(str, Enum):
     FIT = "fit"
 
 
+class CropBackgroundType(str, Enum):
+    COLOR = "color"
+    BLUR = "blur"
+
+
+DEFAULT_BACKGROUND_COLOR = "#000000"
+BLUR_SIGMA = 20
+_HEX_COLOR_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}\Z")
+
+
 class InvalidCropSpecError(Exception):
     """Raised when a crop payload is incomplete or unsupported."""
 
@@ -53,6 +64,47 @@ class InvalidCropDimensionsError(Exception):
 class CropSpec:
     aspect_ratio: CropAspectRatio
     mode: CropMode
+    background_type: CropBackgroundType | None = None
+    background_color: str | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            aspect_ratio = CropAspectRatio(self.aspect_ratio)
+            mode = CropMode(self.mode)
+        except (TypeError, ValueError) as exc:
+            raise InvalidCropSpecError("Invalid crop parameters") from exc
+        object.__setattr__(self, "aspect_ratio", aspect_ratio)
+        object.__setattr__(self, "mode", mode)
+
+        if mode is CropMode.CROP:
+            if self.background_type is not None or self.background_color is not None:
+                raise InvalidCropSpecError(
+                    "Background parameters are only supported in fit mode"
+                )
+            return
+
+        requested_background_type = self.background_type
+        try:
+            background_type = CropBackgroundType(
+                requested_background_type or CropBackgroundType.COLOR
+            )
+        except (TypeError, ValueError) as exc:
+            raise InvalidCropSpecError("Invalid crop background type") from exc
+        object.__setattr__(self, "background_type", background_type)
+        if background_type is CropBackgroundType.COLOR:
+            if requested_background_type is not None and self.background_color is None:
+                raise InvalidCropSpecError(
+                    "Background color is required with color background"
+                )
+            object.__setattr__(
+                self,
+                "background_color",
+                normalize_hex_color(self.background_color or DEFAULT_BACKGROUND_COLOR),
+            )
+        elif self.background_color is not None:
+            raise InvalidCropSpecError(
+                "Background color is not supported with blur background"
+            )
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "CropSpec":
@@ -60,15 +112,36 @@ class CropSpec:
             return cls(
                 aspect_ratio=CropAspectRatio(payload["aspect_ratio"]),
                 mode=CropMode(payload["mode"]),
+                background_type=payload.get("background_type"),
+                background_color=payload.get("background_color"),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidCropSpecError("Invalid crop parameters") from exc
 
     def to_payload(self) -> dict[str, str]:
-        return {
+        payload = {
             "aspect_ratio": self.aspect_ratio.value,
             "mode": self.mode.value,
         }
+        if self.mode is CropMode.FIT:
+            if self.background_type is None:
+                raise RuntimeError("Fit background type is unavailable")
+            payload["background_type"] = self.background_type.value
+            if self.background_type is CropBackgroundType.COLOR:
+                if self.background_color is None:
+                    raise RuntimeError("Fit background color is unavailable")
+                payload["background_color"] = self.background_color
+        return payload
+
+
+def normalize_hex_color(value: str) -> str:
+    if not isinstance(value, str) or _HEX_COLOR_PATTERN.fullmatch(value) is None:
+        raise InvalidCropSpecError("Background color must use #RRGGBB format")
+    return value.upper()
+
+
+def ffmpeg_color(value: str) -> str:
+    return f"0x{normalize_hex_color(value)[1:]}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,17 +196,44 @@ def resolve_crop_profile(
     )
 
 
+def build_fit_color_filter(spec: CropSpec, profile: CropProfile) -> str:
+    width, height = profile.output_width, profile.output_height
+    if spec.background_type is not CropBackgroundType.COLOR:
+        raise InvalidCropSpecError("Color fit background is required")
+    if spec.background_color is None:
+        raise InvalidCropSpecError("Fit background color is required")
+    return (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
+        "force_divisible_by=2,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:"
+        f"{ffmpeg_color(spec.background_color)},setsar=1"
+    )
+
+
+def build_fit_blur_filter(profile: CropProfile) -> str:
+    width, height = profile.output_width, profile.output_height
+    return (
+        "[0:v:0]split=2[background][foreground];"
+        f"[background]scale={width}:{height}:"
+        "force_original_aspect_ratio=increase:force_divisible_by=2,"
+        f"crop={width}:{height},gblur=sigma={BLUR_SIGMA},setsar=1[blurred];"
+        f"[foreground]scale={width}:{height}:"
+        "force_original_aspect_ratio=decrease:force_divisible_by=2,"
+        "setsar=1[fitted];"
+        "[blurred][fitted]overlay=(W-w)/2:(H-h)/2:shortest=1,"
+        "setsar=1[vout]"
+    )
+
+
 def build_crop_filter(spec: CropSpec, profile: CropProfile) -> str:
     width, height = profile.output_width, profile.output_height
     if spec.mode is CropMode.CROP:
         x = (profile.source_width - width) // 2
         y = (profile.source_height - height) // 2
         return f"crop={width}:{height}:{x}:{y},setsar=1"
-    return (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
-        "force_divisible_by=2,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
-    )
+    if spec.background_type is CropBackgroundType.BLUR:
+        return build_fit_blur_filter(profile)
+    return build_fit_color_filter(spec, profile)
 
 
 def build_crop_command(
@@ -152,16 +252,21 @@ def build_crop_command(
         "-y",
         "-i",
         str(input_path),
-        "-map",
-        "0:v:0",
-        "-vf",
-        build_crop_filter(spec, profile),
-        "-c:v",
-        media.video_encoder,
-        media.quality_option,
-        str(media.quality_values[CompressionLevel.BALANCED]),
-        *media.video_options,
     ]
+    video_filter = build_crop_filter(spec, profile)
+    if spec.mode is CropMode.FIT and spec.background_type is CropBackgroundType.BLUR:
+        command.extend(["-filter_complex", video_filter, "-map", "[vout]"])
+    else:
+        command.extend(["-map", "0:v:0", "-vf", video_filter])
+    command.extend(
+        [
+            "-c:v",
+            media.video_encoder,
+            media.quality_option,
+            str(media.quality_values[CompressionLevel.BALANCED]),
+            *media.video_options,
+        ]
+    )
     if profile.has_audio:
         command.extend(["-map", "0:a?", "-c:a", "copy"])
     else:
