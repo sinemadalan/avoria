@@ -34,7 +34,7 @@ export default function SpeedPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Adjust Playback Speed</h1>
         <p className="workspace-description">
-          Accelerate or slow down video and audio playback while preserving pitch accuracy.
+          Upload a video or audio file, choose a playback speed from 0.25× to 4×, and create a faster or slower version while keeping voices and music natural.
         </p>
       </header>
 

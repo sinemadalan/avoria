@@ -60,7 +60,7 @@ export default function TrimPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Trim Media</h1>
         <p className="workspace-description">
-          Extract a precise duration segment by specifying start and end timecodes.
+          Upload a video or audio file, enter exact start and end times, and export only the section you want without keeping the unwanted beginning or ending.
         </p>
       </header>
 

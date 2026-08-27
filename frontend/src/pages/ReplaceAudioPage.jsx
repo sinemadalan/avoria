@@ -56,7 +56,7 @@ export default function ReplaceAudioPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Replace Audio</h1>
         <p className="workspace-description">
-          Substitute the video's existing soundtrack with a new audio recording or musical score.
+          Upload a base video and a new audio track to replace the original soundtrack. You can also loop shorter audio so it continues for the full video duration.
         </p>
       </header>
 

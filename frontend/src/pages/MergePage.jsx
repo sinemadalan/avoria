@@ -87,7 +87,7 @@ export default function MergePage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Merge Videos</h1>
         <p className="workspace-description">
-          Concatenate multiple video clips sequentially into a unified master video.
+          Upload two or more video clips, arrange them in the order you want, select a shared canvas ratio, and combine them into one continuous video file.
         </p>
       </header>
 

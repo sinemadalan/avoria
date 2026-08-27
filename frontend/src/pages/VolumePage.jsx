@@ -33,7 +33,7 @@ export default function VolumePage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Adjust Audio Volume</h1>
         <p className="workspace-description">
-          Amplify quiet speech or lower loud music tracks with controlled volume gain.
+          Upload a video or audio file and set the volume from 0% to 300% to mute, lower or boost its sound, then export a new file at your chosen level.
         </p>
       </header>
 

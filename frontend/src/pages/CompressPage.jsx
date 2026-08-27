@@ -9,10 +9,11 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 const COMPRESSION_LEVELS = [
   {
-    id: "high_quality",
+    id: "light",
     title: "High Quality",
     badge: "Visually Lossless",
     desc: "Preserves pristine detail and color accuracy with moderate size reduction.",
@@ -26,7 +27,7 @@ const COMPRESSION_LEVELS = [
     icon: Zap,
   },
   {
-    id: "small_file",
+    id: "strong",
     title: "Small File",
     badge: "Maximum Savings",
     desc: "Compact video size ideal for email attachments and bandwidth-constrained apps.",
@@ -36,7 +37,7 @@ const COMPRESSION_LEVELS = [
 
 export default function CompressPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [level, setLevel] = useState("balanced");
 
@@ -53,11 +54,11 @@ export default function CompressPage() {
   };
 
   return (
-    <div className="workspace">
+    <div className="workspace compress-workspace">
       <header className="workspace-header">
         <h1 className="workspace-title">Compress Video</h1>
         <p className="workspace-description">
-          Reduce your video file size with intelligent multi-pass rate control while maintaining crisp visual quality.
+          Upload a video and choose a compression level to reduce its file size for easier storage or sharing. Avoria re-encodes the file and shows how much space you saved.
         </p>
       </header>
 
@@ -96,7 +97,11 @@ export default function CompressPage() {
             output={output}
             mediaType="video"
             onReset={resetJob}
-            title="Video compression complete"
+            title="Compressed video ready"
+            subtitle="Your new file is ready to download."
+            variant="compression"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
           />
         )}
 

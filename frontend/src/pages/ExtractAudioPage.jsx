@@ -41,7 +41,7 @@ export default function ExtractAudioPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Extract Audio Track</h1>
         <p className="workspace-description">
-          Demux and extract soundtracks, dialogue, or music from your video file into a standalone audio format.
+          Upload a video, choose MP3, WAV, FLAC, M4A, Opus or OGG, and extract its soundtrack as a separate audio file for listening, editing or reuse.
         </p>
       </header>
 

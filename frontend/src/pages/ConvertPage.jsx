@@ -128,7 +128,9 @@ export default function ConvertPage() {
             onReset={resetJob}
             title="Your converted video is ready"
             subtitle="The new file is ready for playback, editing or sharing."
+            variant="conversion"
             downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
           />
         )}
 

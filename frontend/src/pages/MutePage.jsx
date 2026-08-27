@@ -27,7 +27,7 @@ export default function MutePage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Mute Video</h1>
         <p className="workspace-description">
-          Completely strip all audio streams and render a silent video file.
+          Upload a video to remove every embedded audio stream and create a completely silent copy while keeping the original picture and playback duration unchanged.
         </p>
       </header>
 

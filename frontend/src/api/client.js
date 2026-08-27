@@ -10,6 +10,41 @@ export class ApiError extends Error {
   }
 }
 
+function formatErrorMessage(errorData, status) {
+  if (typeof errorData?.message === "string") {
+    return errorData.message;
+  }
+
+  if (typeof errorData?.detail === "string") {
+    return errorData.detail;
+  }
+
+  if (Array.isArray(errorData?.detail)) {
+    const messages = errorData.detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return null;
+
+        const field = Array.isArray(item.loc) ? item.loc.at(-1) : null;
+        const message = typeof item.msg === "string"
+          ? item.msg.replace(/^Value error,\s*/i, "")
+          : null;
+
+        if (!message) return null;
+        return field && field !== "body" ? `${field}: ${message}` : message;
+      })
+      .filter(Boolean);
+
+    if (messages.length > 0) {
+      return messages.join(" · ");
+    }
+  }
+
+  return typeof errorData === "string"
+    ? errorData
+    : `Request failed with status ${status}`;
+}
+
 /**
  * Core API request handler
  */
@@ -40,10 +75,7 @@ export async function apiClient(endpoint, options = {}) {
       // response is not JSON
     }
 
-    const message =
-      errorData?.message ||
-      errorData?.detail ||
-      (typeof errorData === "string" ? errorData : `Request failed with status ${response.status}`);
+    const message = formatErrorMessage(errorData, response.status);
 
     const code = errorData?.code || "api_error";
     const details = errorData?.details || null;

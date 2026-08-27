@@ -19,15 +19,17 @@ export default function ResultPanel({
   title = "Your media is ready",
   subtitle = "Your processed file is ready to use.",
   downloadUrl,
+  downloadLabel = "Download file",
+  variant = "default",
 }) {
   return (
-    <div className="result-card" role="region" aria-label="Processing result">
+    <div className={`result-card ${variant !== "default" ? `${variant}-result-card` : ""}`} role="region" aria-label="Processing result">
       <div className="result-header">
         <div className="result-success-icon" aria-hidden="true">
           <CheckCircle2 size={20} />
         </div>
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
+          <h2 className="result-title">
             {title}
           </h2>
           <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
@@ -67,7 +69,7 @@ export default function ResultPanel({
         {downloadUrl && (
           <a href={downloadUrl} download className="action-btn-primary result-download-button">
             <Download size={16} />
-            Download file
+            {downloadLabel}
           </a>
         )}
         <button

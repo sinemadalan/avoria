@@ -78,7 +78,7 @@ export default function CropFitPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Crop & Fit</h1>
         <p className="workspace-description">
-          Adapt video dimensions for vertical stories, reels, square feeds, or widescreen displays.
+          Upload a video, choose the aspect ratio you need, then crop it to fill the frame or fit it with a color or blurred background for different screens and social platforms.
         </p>
       </header>
 
