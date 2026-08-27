@@ -1,4 +1,6 @@
 import asyncio
+import shutil
+import subprocess
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,6 +16,7 @@ from backend.app.processing.compression import (
     VP9_COMPRESSION_CRF,
     CompressionLevel,
     CompressionProfile,
+    ResolvedCompressionProfile,
     CompressionService,
     CompressionSpec,
     InvalidCompressionInputError,
@@ -21,13 +24,19 @@ from backend.app.processing.compression import (
     build_compress_command,
     calculate_compression_statistics,
     detect_compression_profile,
+    resolve_compression_profile,
 )
 from backend.app.processing.conversion import (
     FFmpegConversionError,
+    FFmpegRunner,
     LocalFFmpegCapabilities,
     OutputContainer,
 )
-from backend.app.processing.probe import MediaInspection, parse_ffprobe_payload
+from backend.app.processing.probe import (
+    MediaInspection,
+    SyncFFprobeInspector,
+    parse_ffprobe_payload,
+)
 from backend.app.infrastructure.queue import _public_failure_message
 from backend.app.workers.tasks import execute_media_job
 
@@ -154,6 +163,232 @@ def test_container_specific_video_options_are_applied(tmp_path: Path) -> None:
     assert webm[webm.index("-b:v") + 1] == "0"
 
 
+def source_inspection(
+    *,
+    format_name: str = "mov,mp4,m4a,3gp,3g2,mj2",
+    width: int = 3840,
+    height: int = 2160,
+    frame_rate: str = "60/1",
+    video_codec: str = "h264",
+    video_bit_rate: int = 20_000_000,
+    with_audio: bool = True,
+    audio_codec: str = "aac",
+    audio_bit_rate: int = 192_000,
+) -> MediaInspection:
+    streams: list[dict[str, object]] = [
+        {
+            "index": 0,
+            "codec_type": "video",
+            "codec_name": video_codec,
+            "width": width,
+            "height": height,
+            "avg_frame_rate": frame_rate,
+            "bit_rate": video_bit_rate,
+        }
+    ]
+    if with_audio:
+        streams.append(
+            {
+                "index": 1,
+                "codec_type": "audio",
+                "codec_name": audio_codec,
+                "bit_rate": audio_bit_rate,
+            }
+        )
+    return parse_ffprobe_payload(
+        {
+            "format": {
+                "format_name": format_name,
+                "duration": "12.5",
+                "bit_rate": str(video_bit_rate + (audio_bit_rate if with_audio else 0)),
+            },
+            "streams": streams,
+        }
+    )
+
+
+def resolved_command(
+    tmp_path: Path,
+    container: OutputContainer,
+    level: CompressionLevel,
+    inspection: MediaInspection,
+) -> tuple[ResolvedCompressionProfile, list[str]]:
+    profile = resolve_compression_profile(
+        COMPRESSION_PROFILES[container],
+        inspection,
+        CompressionSpec(level),
+    )
+    command = build_compress_command(
+        "ffmpeg",
+        tmp_path / f"input.{container.value}",
+        tmp_path / f"output.part.{container.value}",
+        CompressionSpec(level),
+        profile,
+    )
+    return profile, command
+
+
+def test_high_quality_preserves_source_dimensions_and_fps(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.LIGHT,
+        source_inspection(),
+    )
+
+    assert profile.video_encoder == "libx264"
+    assert profile.quality_value == 22
+    assert profile.scale_filter is None
+    assert profile.output_frame_rate is None
+    assert command[command.index("-preset") + 1] == "slow"
+    assert command[command.index("-b:a") + 1] == "128k"
+    assert "-vf" not in command
+    assert "-r" not in command
+    assert profile.source.video_codec == "h264"
+    assert profile.source.video_bit_rate == 20_000_000
+    assert profile.source.audio_codec == "aac"
+    assert profile.source.audio_bit_rate == 192_000
+    assert profile.source.duration_seconds == 12.5
+
+
+def test_4k_mp4_balanced_uses_hevc_1080p_and_preserves_fps(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.BALANCED,
+        source_inspection(),
+    )
+
+    assert profile.video_encoder == "libx265"
+    assert profile.quality_value == 27
+    assert profile.scale_filter == "scale=-2:1080"
+    assert profile.output_frame_rate is None
+    assert command[command.index("-preset") + 1] == "slow"
+    assert command[command.index("-pix_fmt") + 1] == "yuv420p"
+    assert command[command.index("-tag:v") + 1] == "hvc1"
+    assert command[command.index("-b:a") + 1] == "96k"
+    assert "-r" not in command
+
+
+def test_4k_mp4_small_file_uses_hevc_720p_and_caps_fps(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.STRONG,
+        source_inspection(),
+    )
+
+    assert profile.video_encoder == "libx265"
+    assert profile.quality_value == 30
+    assert profile.scale_filter == "scale=-2:720"
+    assert profile.output_frame_rate == 30.0
+    assert command[command.index("-preset") + 1] == "medium"
+    assert command[command.index("-r") + 1] == "30"
+    assert command[command.index("-b:a") + 1] == "80k"
+
+
+@pytest.mark.parametrize(
+    ("height", "level"),
+    [
+        (1080, CompressionLevel.BALANCED),
+        (720, CompressionLevel.STRONG),
+    ],
+)
+def test_source_at_preset_height_is_not_rescaled(
+    height: int,
+    level: CompressionLevel,
+    tmp_path: Path,
+) -> None:
+    width = 1920 if height == 1080 else 1280
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        level,
+        source_inspection(width=width, height=height, frame_rate="30/1"),
+    )
+
+    assert profile.scale_filter is None
+    assert "-vf" not in command
+
+
+@pytest.mark.parametrize(
+    ("source_rate", "expected_rate"),
+    [("24/1", None), ("60/1", 30.0)],
+)
+def test_small_file_only_caps_frame_rates_above_30(
+    source_rate: str,
+    expected_rate: float | None,
+    tmp_path: Path,
+) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.STRONG,
+        source_inspection(width=1280, height=720, frame_rate=source_rate),
+    )
+
+    assert profile.output_frame_rate == expected_rate
+    assert ("-r" in command) is (expected_rate is not None)
+
+
+def test_webm_preserves_vp9_and_applies_source_aware_limits(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.WEBM,
+        CompressionLevel.STRONG,
+        source_inspection(format_name="matroska,webm", video_codec="vp9"),
+    )
+
+    assert profile.video_encoder == "libvpx-vp9"
+    assert "libx265" not in command
+    assert profile.scale_filter == "scale=-2:720"
+    assert profile.output_frame_rate == 30.0
+    assert profile.audio_encoder == "libopus"
+    assert command[command.index("-b:a") + 1] == "80k"
+
+
+def test_no_audio_source_does_not_add_an_audio_mapping(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.BALANCED,
+        source_inspection(with_audio=False),
+    )
+
+    assert profile.audio_encoder is None
+    assert "0:a:0?" not in command
+    assert "-c:a" not in command
+
+
+def test_portrait_video_keeps_orientation_when_scaled(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.MP4,
+        CompressionLevel.BALANCED,
+        source_inspection(width=1080, height=1920, frame_rate="30/1"),
+    )
+
+    assert profile.source.width == 1080
+    assert profile.source.height == 1920
+    assert profile.scale_filter == "scale=-2:1080"
+    assert command[command.index("-vf") + 1] == "scale=-2:1080"
+
+
+def test_avi_keeps_legacy_safe_codec_policy(tmp_path: Path) -> None:
+    profile, command = resolved_command(
+        tmp_path,
+        OutputContainer.AVI,
+        CompressionLevel.STRONG,
+        source_inspection(format_name="avi"),
+    )
+
+    assert profile.video_encoder == "mpeg4"
+    assert profile.audio_encoder == "libmp3lame"
+    assert profile.scale_filter is None
+    assert profile.output_frame_rate is None
+    assert "libx265" not in command
+
+
 @pytest.mark.parametrize(
     ("extension", "format_name", "container"),
     [
@@ -248,7 +483,7 @@ def test_compression_service_accepts_video_without_audio(tmp_path: Path) -> None
         StubInspector(VIDEO_ONLY),  # type: ignore[arg-type]
         runner,  # type: ignore[arg-type]
         LocalFFmpegCapabilities(
-            encoders=frozenset({"libx264", "aac"}),
+            encoders=frozenset({"libx265", "aac"}),
             muxers=frozenset({"mp4"}),
         ),
     )
@@ -260,7 +495,8 @@ def test_compression_service_accepts_video_without_audio(tmp_path: Path) -> None
     )
 
     assert runner.command is not None
-    assert "0:a:0?" in runner.command
+    assert "0:a:0?" not in runner.command
+    assert "-c:a" not in runner.command
 
 
 class WritingCompressor:
@@ -272,7 +508,11 @@ class WritingCompressor:
         self.output = output
         self.error = error
 
-    def resolve_profile(self, input_path: Path) -> CompressionProfile:
+    def resolve_profile(
+        self,
+        input_path: Path,
+        _spec: CompressionSpec | None = None,
+    ) -> CompressionProfile:
         return COMPRESSION_PROFILES[OutputContainer(input_path.suffix[1:].casefold())]
 
     def compress(
@@ -280,7 +520,7 @@ class WritingCompressor:
         _input_path: Path,
         output_path: Path,
         _compression: CompressionSpec,
-        _profile: CompressionProfile,
+        _profile: CompressionProfile | ResolvedCompressionProfile,
     ) -> None:
         output_path.write_bytes(self.output)
         if self.error is not None:
@@ -472,3 +712,61 @@ def test_worker_reports_nonexistent_media(tmp_path: Path) -> None:
             compression=CompressionSpec(),
             allowed_extensions=[".mov"],
         )
+
+
+def test_real_ffmpeg_small_file_mp4_uses_hevc_caps_fps_and_keeps_audio(
+    tmp_path: Path,
+) -> None:
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("FFmpeg and FFprobe are required for the integration test")
+
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "output.part.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=60:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.5",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+    inspector = SyncFFprobeInspector(ffprobe, 30)
+    service = CompressionService(
+        ffmpeg,
+        inspector,
+        FFmpegRunner(60),
+        LocalFFmpegCapabilities(
+            encoders=frozenset({"libx265", "aac"}),
+            muxers=frozenset({"mp4"}),
+        ),
+    )
+    spec = CompressionSpec(CompressionLevel.STRONG)
+    profile = service.resolve_profile(source, spec)
+    service.compress(source, output, spec, profile)
+    result = inspector.inspect(output)
+
+    assert result.video_streams[0].codec_name == "hevc"
+    assert result.video_streams[0].frame_rate == pytest.approx(30, abs=0.1)
+    assert (result.video_streams[0].width, result.video_streams[0].height) == (320, 240)
+    assert result.audio_streams[0].codec_name == "aac"
+    assert "mp4" in (result.format.name or "")

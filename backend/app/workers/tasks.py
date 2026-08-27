@@ -22,6 +22,7 @@ from backend.app.processing.audio_extraction import (
 )
 from backend.app.processing.compression import (
     CompressionProfile,
+    ResolvedCompressionProfile,
     CompressionService,
     CompressionSpec,
     CompressionStatistics,
@@ -249,7 +250,7 @@ def execute_media_job(
     started_at = monotonic()
     target: OutputTarget | None = None
     statistics: CompressionStatistics | None = None
-    compression_profile: CompressionProfile | None = None
+    compression_profile: CompressionProfile | ResolvedCompressionProfile | None = None
     extraction_profile: AudioExtractionProfile | None = None
     mute_profile: CompressionProfile | None = None
     volume_profile: CompressionProfile | None = None
@@ -287,7 +288,7 @@ def execute_media_job(
         elif operation is JobOperation.COMPRESS:
             if compressor is None or compression is None:
                 raise ValueError("Compression dependencies are unavailable")
-            compression_profile = compressor.resolve_profile(input_path)
+            compression_profile = compressor.resolve_profile(input_path, compression)
             extension = compression_profile.extension
         elif operation is JobOperation.EXTRACT_AUDIO:
             if audio_extractor is None or extraction is None:
