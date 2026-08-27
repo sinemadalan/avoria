@@ -13,6 +13,7 @@ function formatBytes(bytes) {
 }
 
 export default function ResultPanel({
+  children,
   output,
   mediaType = "video",
   onReset,
@@ -37,6 +38,8 @@ export default function ResultPanel({
           </p>
         </div>
       </div>
+
+      {children}
 
       {/* Metrics (if compression or size reduction present) */}
       {(output?.original_size || output?.compressed_size || output?.reduction_percentage) && (

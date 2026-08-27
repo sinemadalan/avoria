@@ -9,10 +9,11 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 export default function TrimPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [duration, setDuration] = useState(60);
   const [startSeconds, setStartSeconds] = useState(0);
@@ -100,8 +101,18 @@ export default function TrimPage() {
             output={output}
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
-            title="Trim complete"
-          />
+            title="Trimmed media ready"
+            subtitle="Preview your selected clip below or download the finished file."
+            variant="trim"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download media"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType={currentMedia?.mediaType || "video"}
+              title={`Trimmed ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner message={uploadError || error} onRetry={error ? handleProcess : undefined} />}

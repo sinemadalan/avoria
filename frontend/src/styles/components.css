@@ -972,20 +972,23 @@
 }
 
 .compression-result-card,
-.conversion-result-card {
+.conversion-result-card,
+.trim-result-card {
   padding: 1.2rem 1.3rem;
   gap: .9rem;
   border-color: #d9e4db;
 }
 
 .compression-result-card .result-success-icon,
-.conversion-result-card .result-success-icon {
+.conversion-result-card .result-success-icon,
+.trim-result-card .result-success-icon {
   width: 36px;
   height: 36px;
 }
 
 .compression-result-card .result-title,
-.conversion-result-card .result-title {
+.conversion-result-card .result-title,
+.trim-result-card .result-title {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 500;
 }
@@ -1009,7 +1012,8 @@
 }
 
 .compression-result-card .result-actions,
-.conversion-result-card .result-actions {
+.conversion-result-card .result-actions,
+.trim-result-card .result-actions {
   justify-content: center;
 }
 
