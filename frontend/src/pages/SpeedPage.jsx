@@ -8,14 +8,16 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
-const QUICK_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0];
+const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
 export default function SpeedPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
-  const [speed, setSpeed] = useState(1.5);
+  const [speed, setSpeed] = useState(1);
+  const selectedSpeedIndex = SPEED_PRESETS.indexOf(speed);
 
   const handleProcess = async () => {
     if (!currentMedia?.mediaId) return;
@@ -34,7 +36,7 @@ export default function SpeedPage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Adjust Playback Speed</h1>
         <p className="workspace-description">
-          Upload a video or audio file, choose a playback speed from 0.25× to 4×, and create a faster or slower version while keeping voices and music natural.
+          Upload a video or audio file, choose one of the supported playback speeds from 0.5x to 4x, and create a faster or slower version while keeping voices and music natural.
         </p>
       </header>
 
@@ -73,8 +75,18 @@ export default function SpeedPage() {
             output={output}
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
-            title="Speed adjustment complete"
-          />
+            title="Adjusted media ready"
+            subtitle={`Preview your ${speed}x result below or download the finished file.`}
+            variant="speed"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download media"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType={currentMedia?.mediaType || "video"}
+              title={`${speed}x ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
@@ -94,42 +106,24 @@ export default function SpeedPage() {
 
                 <input
                   type="range"
-                  min="0.25"
-                  max="4.0"
-                  step="0.05"
-                  value={speed}
-                  onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                  min="0"
+                  max={SPEED_PRESETS.length - 1}
+                  step="1"
+                  value={selectedSpeedIndex}
+                  onChange={(e) => setSpeed(SPEED_PRESETS[Number(e.target.value)])}
                   className="range-input"
                   aria-label="Speed multiplier"
+                  aria-valuetext={`${speed}x`}
                 />
 
-                <div className="slider-ticks" style={{ marginTop: "0.25rem" }}>
-                  <span>0.25x (Slowest)</span>
-                  <span>1.0x (Normal)</span>
-                  <span>2.0x</span>
-                  <span>4.0x (Max)</span>
-                </div>
-
-                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.85rem" }}>
-                  {QUICK_PRESETS.map((preset) => (
-                    <button
+                <div className="speed-slider-options" aria-hidden="true">
+                  {SPEED_PRESETS.map((preset) => (
+                    <span
                       key={preset}
-                      type="button"
-                      onClick={() => setSpeed(preset)}
-                      style={{
-                        padding: "0.35rem 0.75rem",
-                        borderRadius: "var(--radius-sm)",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        backgroundColor: speed === preset ? "var(--bg-surface-active)" : "var(--bg-surface-elevated)",
-                        color: speed === preset ? "var(--accent-primary)" : "var(--text-secondary)",
-                        border: `1px solid ${speed === preset ? "var(--accent-primary)" : "var(--border-subtle)"}`,
-                        transition: "all var(--transition-fast)",
-                        cursor: "pointer",
-                      }}
+                      className={speed === preset ? "speed-slider-option-active" : ""}
                     >
                       {preset}x
-                    </button>
+                    </span>
                   ))}
                 </div>
               </div>

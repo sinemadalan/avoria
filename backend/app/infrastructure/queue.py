@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from functools import lru_cache, partial
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -19,6 +20,7 @@ from backend.app.application.ports.jobs import (
     JobState,
 )
 from backend.app.core.celery_app import celery_app
+from backend.app.core.config import get_settings
 from backend.app.processing.audio_extraction import (
     MediaHasNoAudioError,
     UnsupportedAudioContainerError,
@@ -70,10 +72,11 @@ _MAX_LOCAL_JOBS = 10_000
 
 
 class CeleryJobQueue(JobQueue):
-    """Celery adapter; task state remains in Celery's transient result backend."""
+    """Celery adapter with output-file recovery for transient task results."""
 
-    def __init__(self, app: Celery) -> None:
+    def __init__(self, app: Celery, output_directory: Path | None = None) -> None:
         self.app = app
+        self.output_directory = output_directory
         self._submitted: OrderedDict[
             str, tuple[str, JobOperation, dict[str, Any]]
         ] = OrderedDict()
@@ -107,6 +110,16 @@ class CeleryJobQueue(JobQueue):
 
         local_metadata = self._submitted.get(job_id)
         metadata = info if isinstance(info, dict) else {}
+        recovered_format = self._completed_output_format(job_id)
+        if state == states.PENDING and local_metadata is not None and recovered_format:
+            state = states.SUCCESS
+            metadata = {
+                "media_id": local_metadata[0],
+                "operation": local_metadata[1].value,
+                "output_id": job_id,
+                "format": recovered_format,
+                "progress": 100,
+            }
         if state == states.PENDING and local_metadata is None:
             # Celery reports PENDING for both unknown and not-yet-started tasks.
             raise JobNotFoundError
@@ -150,6 +163,17 @@ class CeleryJobQueue(JobQueue):
             )
         except (TypeError, ValueError) as exc:
             raise JobQueueStateError from exc
+
+    def _completed_output_format(self, job_id: str) -> str | None:
+        if self.output_directory is None:
+            return None
+        try:
+            for path in self.output_directory.iterdir():
+                if path.is_file() and path.stem == job_id and path.suffix:
+                    return path.suffix.casefold().lstrip(".")
+        except OSError:
+            return None
+        return None
 
     def _remember(
         self,
@@ -349,4 +373,5 @@ def _optional_bool(value: Any) -> bool | None:
 
 @lru_cache
 def get_job_queue() -> CeleryJobQueue:
-    return CeleryJobQueue(celery_app)
+    settings = get_settings()
+    return CeleryJobQueue(celery_app, settings.output_directory)

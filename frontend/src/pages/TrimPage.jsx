@@ -17,13 +17,13 @@ export default function TrimPage() {
 
   const [duration, setDuration] = useState(60);
   const [startSeconds, setStartSeconds] = useState(0);
-  const [endSeconds, setEndSeconds] = useState(10);
+  const [endSeconds, setEndSeconds] = useState(1);
 
   useEffect(() => {
     const dur = currentMedia?.metadata?.format?.duration_seconds;
     if (dur && dur > 0) {
       setDuration(dur);
-      setEndSeconds(Math.min(dur, Math.max(1, Math.round(dur))));
+      setEndSeconds((currentEnd) => Math.min(currentEnd, dur));
     }
   }, [currentMedia]);
 
@@ -31,8 +31,8 @@ export default function TrimPage() {
     const dur = e.target.duration;
     if (dur && !isNaN(dur) && isFinite(dur)) {
       setDuration(dur);
-      if (endSeconds > dur || endSeconds === 10) {
-        setEndSeconds(Math.min(dur, Math.max(1, Math.round(dur))));
+      if (endSeconds > dur) {
+        setEndSeconds(dur);
       }
     }
   };

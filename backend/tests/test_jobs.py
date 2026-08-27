@@ -1084,6 +1084,61 @@ def test_celery_adapter_reads_progress_metadata(
     assert record.output_format == "webm"
 
 
+def test_celery_adapter_recovers_completed_output_when_rpc_result_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class PendingResult:
+        state = states.PENDING
+        info = None
+
+    monkeypatch.setattr(
+        queue_module,
+        "AsyncResult",
+        lambda *_args, **_kwargs: PendingResult(),
+    )
+    adapter = CeleryJobQueue(object(), tmp_path)  # type: ignore[arg-type]
+    adapter._remember(job_id, media_id, JobOperation.SPEED, {"speed": 1.25})
+    (tmp_path / f"{job_id}.mov").write_bytes(b"processed media")
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.COMPLETED
+    assert record.operation is JobOperation.SPEED
+    assert record.output_id == job_id
+    assert record.output_format == "mov"
+    assert record.progress == 100
+
+
+def test_celery_adapter_does_not_recover_partial_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    job_id = str(uuid4())
+    media_id = str(uuid4())
+
+    class PendingResult:
+        state = states.PENDING
+        info = None
+
+    monkeypatch.setattr(
+        queue_module,
+        "AsyncResult",
+        lambda *_args, **_kwargs: PendingResult(),
+    )
+    adapter = CeleryJobQueue(object(), tmp_path)  # type: ignore[arg-type]
+    adapter._remember(job_id, media_id, JobOperation.SPEED, {"speed": 1.25})
+    (tmp_path / f"{job_id}.part.mov").write_bytes(b"partial media")
+
+    record = asyncio.run(adapter.get(job_id))
+
+    assert record.status is JobState.QUEUED
+    assert record.progress is None
+
+
 def test_celery_adapter_reads_completed_compression_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

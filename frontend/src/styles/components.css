@@ -649,6 +649,34 @@
   color: var(--text-muted);
 }
 
+.speed-slider-options {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.speed-slider-options span {
+  position: relative;
+  padding-top: 0.35rem;
+  text-align: center;
+}
+
+.speed-slider-options span::before {
+  content: "";
+  position: absolute;
+  top: -0.2rem;
+  left: 50%;
+  width: 1px;
+  height: 0.3rem;
+  background: var(--border-strong);
+}
+
+.speed-slider-options .speed-slider-option-active {
+  color: var(--accent-primary);
+  font-weight: 700;
+}
+
 /* Time Inputs */
 .time-inputs-row {
   display: grid;
@@ -973,7 +1001,8 @@
 
 .compression-result-card,
 .conversion-result-card,
-.trim-result-card {
+.trim-result-card,
+.speed-result-card {
   padding: 1.2rem 1.3rem;
   gap: .9rem;
   border-color: #d9e4db;
@@ -981,14 +1010,16 @@
 
 .compression-result-card .result-success-icon,
 .conversion-result-card .result-success-icon,
-.trim-result-card .result-success-icon {
+.trim-result-card .result-success-icon,
+.speed-result-card .result-success-icon {
   width: 36px;
   height: 36px;
 }
 
 .compression-result-card .result-title,
 .conversion-result-card .result-title,
-.trim-result-card .result-title {
+.trim-result-card .result-title,
+.speed-result-card .result-title {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 500;
 }
@@ -1013,7 +1044,8 @@
 
 .compression-result-card .result-actions,
 .conversion-result-card .result-actions,
-.trim-result-card .result-actions {
+.trim-result-card .result-actions,
+.speed-result-card .result-actions {
   justify-content: center;
 }
 
