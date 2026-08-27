@@ -62,10 +62,19 @@ export async function apiClient(endpoint, options = {}) {
     options.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    const message = error?.name === "AbortError"
+      ? "The request took too long. Please try again."
+      : "Avoria could not connect to the API. Make sure the backend service is running, then try again.";
+    const code = error?.name === "AbortError" ? "request_timeout" : "network_error";
+    throw new ApiError(message, 0, code, null);
+  }
 
   if (!response.ok) {
     let errorData = null;

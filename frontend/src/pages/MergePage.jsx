@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Layers, ArrowUp, ArrowDown, Trash2, Plus, Film } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
+import MediaPreview from "../components/media/MediaPreview.jsx";
 import AspectRatioSelector from "../components/controls/AspectRatioSelector.jsx";
 import ProcessingState from "../components/feedback/ProcessingState.jsx";
 import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { uploadMedia } from "../api/media.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 
 const MERGE_RATIOS = [
@@ -17,7 +19,7 @@ const MERGE_RATIOS = [
 ];
 
 export default function MergePage() {
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [videoList, setVideoList] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -92,7 +94,7 @@ export default function MergePage() {
       </header>
 
       <div className="workspace-body">
-        {uploadError && <ErrorBanner message={uploadError} />}
+        {uploadError && <ErrorBanner title="Upload Error" message={uploadError} />}
 
         {isProcessing && (
           <ProcessingState
@@ -109,8 +111,18 @@ export default function MergePage() {
               resetJob();
               setVideoList([]);
             }}
-            title="Videos merged successfully"
-          />
+            title="Merged video ready"
+            subtitle="Preview your combined video below or download the finished file."
+            variant="merge"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType="video"
+              title="Merged video"
+            />
+          </ResultPanel>
         )}
 
         {error && <ErrorBanner message={error} onRetry={handleProcess} />}

@@ -135,7 +135,7 @@ export default function ConvertPage() {
         )}
 
         {/* Error Banner */}
-        {(uploadError || error) && <ErrorBanner message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {/* Controls (always visible when not processing/completed) */}
         {!isProcessing && !isCompleted && (
