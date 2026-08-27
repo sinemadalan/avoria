@@ -1,0 +1,84 @@
+import { NavLink } from "react-router-dom";
+import {
+  Home,
+  RefreshCw,
+  Minimize2,
+  Scissors,
+  Gauge,
+  Crop,
+  Layers,
+  Music,
+  VolumeX,
+  Volume2,
+  AudioLines,
+  Sparkles,
+} from "lucide-react";
+
+export const navItems = [
+  {
+    category: null,
+    items: [{ to: "/", label: "Home", icon: Home }],
+  },
+  {
+    category: "Video",
+    items: [
+      { to: "/convert", label: "Convert", icon: RefreshCw },
+      { to: "/compress", label: "Compress", icon: Minimize2 },
+      { to: "/trim", label: "Trim", icon: Scissors },
+      { to: "/speed", label: "Speed", icon: Gauge },
+      { to: "/crop-fit", label: "Crop & Fit", icon: Crop },
+      { to: "/merge", label: "Merge Videos", icon: Layers },
+    ],
+  },
+  {
+    category: "Audio",
+    items: [
+      { to: "/extract-audio", label: "Extract Audio", icon: Music },
+      { to: "/mute", label: "Mute Video", icon: VolumeX },
+      { to: "/volume", label: "Volume", icon: Volume2 },
+      { to: "/replace-audio", label: "Replace Audio", icon: AudioLines },
+    ],
+  },
+];
+
+export default function Sidebar({ onItemClick }) {
+  return (
+    <aside className="sidebar" aria-label="Main Navigation">
+      <NavLink to="/" className="sidebar-brand" onClick={onItemClick}>
+        <div className="sidebar-logo-icon">
+          <Sparkles size={18} />
+        </div>
+        <span className="sidebar-brand-name">avoria</span>
+      </NavLink>
+
+      <nav className="sidebar-nav">
+        {navItems.map((section, idx) => (
+          <div key={idx} className="sidebar-section">
+            {section.category && (
+              <h2 className="sidebar-section-title">{section.category}</h2>
+            )}
+            <div className="sidebar-link-group">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === "/"}
+                    className={({ isActive }) =>
+                      isActive ? "sidebar-link active" : "sidebar-link"
+                    }
+                    onClick={onItemClick}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}

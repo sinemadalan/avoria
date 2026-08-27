@@ -1,6 +1,7 @@
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import FileResponse
 
 from backend.app.application.ports.jobs import (
     JobNotFoundError,
@@ -185,6 +186,65 @@ async def get_job_status(
         progress=record.progress,
         error=record.error,
     )
+
+
+@router.get("/{job_id}/download", response_class=FileResponse)
+async def download_job_output(
+    job_id: str,
+    settings: Settings = Depends(get_settings),
+    job_queue: JobQueue = Depends(get_job_queue),
+) -> FileResponse:
+    canonical_job_id = _canonical_uuid(job_id, "job ID", "invalid_job_id")
+    try:
+        record = await job_queue.get(canonical_job_id)
+    except JobNotFoundError as exc:
+        raise AppError(
+            "Processing job was not found",
+            code="job_not_found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        ) from exc
+    except JobQueueUnavailableError as exc:
+        raise AppError(
+            "Processing queue is temporarily unavailable",
+            code="job_queue_unavailable",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from exc
+    except JobQueueStateError as exc:
+        raise AppError(
+            "Processing job state is unavailable",
+            code="invalid_job_state",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from exc
+
+    if record.status is not JobState.COMPLETED or not record.output_id or not record.output_format:
+        raise AppError(
+            "The processed file is not ready for download",
+            code="output_not_ready",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+    output_id = _canonical_uuid(record.output_id, "output ID", "invalid_output_id")
+    output_format = str(record.output_format).casefold().lstrip(".")
+    extension = f".{output_format}"
+    allowed_extensions = {item.casefold() for item in settings.allowed_media_extensions}
+    if extension not in allowed_extensions:
+        raise AppError(
+            "The processed file format is invalid",
+            code="invalid_output_format",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    output_root = settings.output_directory.resolve()
+    output_path = (output_root / f"{output_id}{extension}").resolve()
+    if output_path.parent != output_root or not output_path.is_file():
+        raise AppError(
+            "The processed file was not found",
+            code="output_not_found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    filename = f"avoria-{record.operation.value}.{output_format}"
+    return FileResponse(output_path, filename=filename)
 
 
 def _canonical_uuid(value: str, label: str, code: str) -> str:
