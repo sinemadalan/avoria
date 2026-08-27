@@ -7,12 +7,23 @@ export default function OptionCard({
   selected = false,
   onClick,
   icon: Icon,
+  trailing,
 }) {
+  const CardElement = trailing ? "div" : "button";
+
   return (
-    <button
-      type="button"
+    <CardElement
+      type={trailing ? undefined : "button"}
       className={`option-card ${selected ? "selected" : ""}`}
       onClick={onClick}
+      onKeyDown={trailing ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      } : undefined}
+      role={trailing ? "button" : undefined}
+      tabIndex={trailing ? 0 : undefined}
       aria-pressed={selected}
     >
       <div className="option-card-header">
@@ -20,9 +31,9 @@ export default function OptionCard({
           {Icon && <Icon size={16} color="var(--accent-primary)" />}
           <span className="option-card-title">{title}</span>
         </div>
-        {badge && <span className="option-card-badge">{badge}</span>}
+        {trailing || (badge && <span className="option-card-badge">{badge}</span>)}
       </div>
       {description && <p className="option-card-desc">{description}</p>}
-    </button>
+    </CardElement>
   );
 }

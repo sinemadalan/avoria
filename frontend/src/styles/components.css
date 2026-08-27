@@ -484,6 +484,26 @@
   line-height: 1.4;
 }
 
+.background-color-swatch {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 2px solid var(--bg-surface);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 1px var(--border-medium);
+  overflow: hidden;
+}
+
+.background-color-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 /* Aspect Ratio Selector */
 .aspect-grid {
   display: grid;
@@ -1002,7 +1022,8 @@
 .compression-result-card,
 .conversion-result-card,
 .trim-result-card,
-.speed-result-card {
+.speed-result-card,
+.crop-fit-result-card {
   padding: 1.2rem 1.3rem;
   gap: .9rem;
   border-color: #d9e4db;
@@ -1011,7 +1032,8 @@
 .compression-result-card .result-success-icon,
 .conversion-result-card .result-success-icon,
 .trim-result-card .result-success-icon,
-.speed-result-card .result-success-icon {
+.speed-result-card .result-success-icon,
+.crop-fit-result-card .result-success-icon {
   width: 36px;
   height: 36px;
 }
@@ -1019,7 +1041,8 @@
 .compression-result-card .result-title,
 .conversion-result-card .result-title,
 .trim-result-card .result-title,
-.speed-result-card .result-title {
+.speed-result-card .result-title,
+.crop-fit-result-card .result-title {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 500;
 }
@@ -1045,7 +1068,8 @@
 .compression-result-card .result-actions,
 .conversion-result-card .result-actions,
 .trim-result-card .result-actions,
-.speed-result-card .result-actions {
+.speed-result-card .result-actions,
+.crop-fit-result-card .result-actions {
   justify-content: center;
 }
 

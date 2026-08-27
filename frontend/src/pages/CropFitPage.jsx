@@ -1,16 +1,16 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Crop, Maximize2, Palette, Sparkles } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
 import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
 import AspectRatioSelector from "../components/controls/AspectRatioSelector.jsx";
 import OptionCard from "../components/controls/OptionCard.jsx";
-import ColorPicker from "../components/controls/ColorPicker.jsx";
 import ProcessingState from "../components/feedback/ProcessingState.jsx";
 import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 const FIT_MODES = [
   {
@@ -31,7 +31,7 @@ const BG_TYPES = [
   {
     id: "color",
     title: "Solid Color Background",
-    desc: "Fill outer bars with a clean custom color or dark slate palette.",
+    desc: "Click to choose any color for the outer bars.",
     icon: Palette,
   },
   {
@@ -44,12 +44,13 @@ const BG_TYPES = [
 
 export default function CropFitPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [fitMode, setFitMode] = useState("fit");
   const [backgroundType, setBackgroundType] = useState("color");
   const [backgroundColor, setBackgroundColor] = useState("#16161A");
+  const backgroundColorInputRef = useRef(null);
 
   const handleProcess = async () => {
     if (!currentMedia?.mediaId) return;
@@ -117,8 +118,18 @@ export default function CropFitPage() {
             output={output}
             mediaType="video"
             onReset={resetJob}
-            title="Crop & Fit complete"
-          />
+            title="Reframed video ready"
+            subtitle={`Preview your ${aspectRatio} video below or download the finished file.`}
+            variant="crop-fit"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType="video"
+              title={`Reframed video (${aspectRatio})`}
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
@@ -173,22 +184,35 @@ export default function CropFitPage() {
                       description={bg.desc}
                       icon={bg.icon}
                       selected={backgroundType === bg.id}
-                      onClick={() => setBackgroundType(bg.id)}
+                      trailing={bg.id === "color" ? (
+                        <span
+                          className="background-color-swatch"
+                          style={{ backgroundColor }}
+                        >
+                          <input
+                            ref={backgroundColorInputRef}
+                            type="color"
+                            value={backgroundColor}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setBackgroundType("color");
+                            }}
+                            onChange={(event) => setBackgroundColor(event.target.value)}
+                            className="background-color-input"
+                            aria-label="Choose background color"
+                          />
+                        </span>
+                      ) : undefined}
+                      onClick={() => {
+                        setBackgroundType(bg.id);
+                        if (bg.id === "color") {
+                          backgroundColorInputRef.current?.click();
+                        }
+                      }}
                     />
                   ))}
                 </div>
 
-                {backgroundType === "color" && (
-                  <div style={{ marginTop: "0.5rem" }}>
-                    <label style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "block", marginBottom: "0.5rem" }}>
-                      Selected Margin Color:
-                    </label>
-                    <ColorPicker
-                      value={backgroundColor}
-                      onChange={setBackgroundColor}
-                    />
-                  </div>
-                )}
               </div>
             )}
 

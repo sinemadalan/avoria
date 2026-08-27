@@ -2,6 +2,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createJob, getJobStatus } from "../api/jobs.js";
 
 const POLLING_INTERVAL_MS = 1500;
+const MAX_TRANSIENT_POLL_ERRORS = 6;
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+function isRetryablePollingError(error) {
+  return error instanceof TypeError || RETRYABLE_STATUS_CODES.has(error?.status);
+}
 
 export function useJobPolling() {
   const [jobId, setJobId] = useState(null);
@@ -11,6 +17,7 @@ export function useJobPolling() {
   const [error, setError] = useState(null);
 
   const pollingTimerRef = useRef(null);
+  const consecutivePollErrorsRef = useRef(0);
   const isMountedRef = useRef(true);
 
   const clearTimer = () => {
@@ -26,6 +33,7 @@ export function useJobPolling() {
     setOutput(null);
     setProgress(null);
     setStatus("queued");
+    consecutivePollErrorsRef.current = 0;
 
     try {
       const response = await createJob(jobRequest);
@@ -50,6 +58,7 @@ export function useJobPolling() {
       const data = await getJobStatus(id);
       if (!isMountedRef.current) return;
 
+      consecutivePollErrorsRef.current = 0;
       setStatus(data.status);
       if (data.progress !== undefined) {
         setProgress(data.progress);
@@ -71,8 +80,24 @@ export function useJobPolling() {
       }, POLLING_INTERVAL_MS);
     } catch (err) {
       if (!isMountedRef.current) return;
+
+      if (
+        isRetryablePollingError(err)
+        && consecutivePollErrorsRef.current < MAX_TRANSIENT_POLL_ERRORS
+      ) {
+        consecutivePollErrorsRef.current += 1;
+        pollingTimerRef.current = setTimeout(() => {
+          poll(id);
+        }, POLLING_INTERVAL_MS);
+        return;
+      }
+
       setStatus("failed");
-      setError(err.message || "Error checking job status.");
+      setError(
+        isRetryablePollingError(err)
+          ? "Processing finished, but its status could not be checked. Please try again."
+          : (err.message || "Error checking job status."),
+      );
     }
   }, []);
 
@@ -83,6 +108,7 @@ export function useJobPolling() {
     setProgress(null);
     setOutput(null);
     setError(null);
+    consecutivePollErrorsRef.current = 0;
   }, []);
 
   useEffect(() => {
