@@ -76,6 +76,11 @@ export default function MobileNav({ isOpen, onClose }) {
             </div>
           ))}
         </nav>
+
+        <div className="sidebar-credit">
+          <span>Powered by</span>
+          <strong>Sinem ADALAN</strong>
+        </div>
       </aside>
     </>
   );

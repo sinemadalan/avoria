@@ -93,6 +93,11 @@ export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
           </div>
         ))}
       </nav>
+
+      <div className="sidebar-credit">
+        <span>Powered by</span>
+        <strong>Sinem ADALAN</strong>
+      </div>
     </aside>
   );
 }

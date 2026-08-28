@@ -113,7 +113,8 @@
 
 .sidebar--collapsed .sidebar-brand-name,
 .sidebar--collapsed .sidebar-section-title,
-.sidebar--collapsed .sidebar-link span {
+.sidebar--collapsed .sidebar-link span,
+.sidebar--collapsed .sidebar-credit {
   display: none;
 }
 
@@ -178,6 +179,31 @@
 
 .sidebar-link.active svg {
   color: var(--accent-primary);
+}
+
+.sidebar-credit {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  padding: 1rem 0.75rem 1.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.62);
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 0.76rem;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.sidebar-credit strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
 .sidebar-footer {
@@ -1567,9 +1593,11 @@
 }
 
 .home-section-heading h2 {
+  font-family: "Fraunces", Georgia, serif;
   color: var(--text-primary);
   font-size: 1.38rem;
-  letter-spacing: -.03em;
+  font-weight: 500;
+  letter-spacing: -.04em;
   margin-top: .35rem;
 }
 
