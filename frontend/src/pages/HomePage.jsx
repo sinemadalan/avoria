@@ -74,7 +74,7 @@ const AUDIO_TOOLS = [
   {
     to: "/volume",
     title: "Adjust Volume",
-    desc: "Boost quiet recordings or attenuate loud soundtracks up to 300%.",
+    desc: "Boost quiet recordings or attenuate loud soundtracks up to 200%.",
     icon: Volume2,
   },
   {

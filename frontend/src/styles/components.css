@@ -1114,6 +1114,7 @@
 .crop-fit-result-card,
 .extract-audio-result-card,
 .mute-result-card,
+.volume-result-card,
 .merge-result-card {
   padding: 1.2rem 1.3rem;
   gap: .9rem;
@@ -1127,6 +1128,7 @@
 .crop-fit-result-card .result-success-icon,
 .extract-audio-result-card .result-success-icon,
 .mute-result-card .result-success-icon,
+.volume-result-card .result-success-icon,
 .merge-result-card .result-success-icon {
   width: 36px;
   height: 36px;
@@ -1139,6 +1141,7 @@
 .crop-fit-result-card .result-title,
 .extract-audio-result-card .result-title,
 .mute-result-card .result-title,
+.volume-result-card .result-title,
 .merge-result-card .result-title {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 500;
@@ -1169,6 +1172,7 @@
 .crop-fit-result-card .result-actions,
 .extract-audio-result-card .result-actions,
 .mute-result-card .result-actions,
+.volume-result-card .result-actions,
 .merge-result-card .result-actions {
   justify-content: center;
 }

@@ -29,13 +29,13 @@ export const navItems = [
       { to: "/speed", label: "Speed", icon: Gauge },
       { to: "/crop-fit", label: "Crop & Fit", icon: Crop },
       { to: "/merge", label: "Merge Videos", icon: Layers },
+      { to: "/mute", label: "Mute Video", icon: VolumeX },
     ],
   },
   {
     category: "Audio",
     items: [
       { to: "/extract-audio", label: "Extract Audio", icon: Music },
-      { to: "/mute", label: "Mute Video", icon: VolumeX },
       { to: "/volume", label: "Volume", icon: Volume2 },
       { to: "/replace-audio", label: "Replace Audio", icon: AudioLines },
     ],

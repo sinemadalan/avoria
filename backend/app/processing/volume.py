@@ -4,7 +4,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from backend.app.core.config import get_settings
-from backend.app.processing.audio_extraction import MediaHasNoAudioError
+from backend.app.processing.audio_extraction import (
+    AudioExtractionProfile,
+    MediaHasNoAudioError,
+    detect_audio_profile,
+)
 from backend.app.processing.compression import (
     CompressionProfile,
     detect_compression_profile,
@@ -15,7 +19,6 @@ from backend.app.processing.conversion import (
     LocalFFmpegCapabilities,
     get_ffmpeg_capability_detector,
 )
-from backend.app.processing.mute import MediaHasNoVideoError
 from backend.app.processing.probe import MediaInspection, SyncFFprobeInspector
 from backend.app.processing.tools import get_media_tool_paths
 
@@ -46,11 +49,42 @@ class VolumeSpec:
         return {"volume_percent": self.volume_percent}
 
 
+@dataclass(frozen=True, slots=True)
+class VolumeProfile:
+    extension: str
+    muxer: str
+    video: CompressionProfile | None
+    audio: AudioExtractionProfile | None
+    audio_stream_count: int
+
+
 def validate_volume_input(inspection: MediaInspection) -> None:
-    if not inspection.video_streams:
-        raise MediaHasNoVideoError("The input does not contain a video stream")
     if not inspection.audio_streams:
         raise MediaHasNoAudioError("The input does not contain an audio stream")
+
+
+def resolve_volume_profile(
+    input_path: Path,
+    inspection: MediaInspection,
+) -> VolumeProfile:
+    validate_volume_input(inspection)
+    if inspection.video_streams:
+        video = detect_compression_profile(input_path, inspection)
+        return VolumeProfile(
+            video.extension,
+            video.muxer,
+            video,
+            None,
+            len(inspection.audio_streams),
+        )
+    audio = detect_audio_profile(input_path, inspection)
+    return VolumeProfile(
+        audio.extension,
+        audio.muxer,
+        None,
+        audio,
+        len(inspection.audio_streams),
+    )
 
 
 def volume_factor(volume_percent: int) -> str:
@@ -66,9 +100,9 @@ def build_volume_command(
     input_path: Path,
     output_path: Path,
     spec: VolumeSpec,
-    profile: CompressionProfile,
+    profile: VolumeProfile,
 ) -> list[str]:
-    return [
+    command = [
         executable,
         "-hide_banner",
         "-loglevel",
@@ -76,23 +110,31 @@ def build_volume_command(
         "-y",
         "-i",
         str(input_path),
-        "-map",
-        "0:v:0",
-        "-c:v",
-        "copy",
-        "-map",
-        "0:a",
+    ]
+    if profile.video is not None:
+        command.extend(["-map", "0:v:0", "-c:v", "copy"])
+        audio_encoder = profile.video.audio_encoder
+        audio_options = profile.video.audio_options
+    else:
+        command.append("-vn")
+        if profile.audio is None:
+            raise RuntimeError("Volume audio profile is unavailable")
+        audio_encoder = profile.audio.encoder
+        audio_options = profile.audio.encoder_options
+    command.extend([
+        "-map", "0:a",
         "-af",
         f"volume={volume_factor(spec.volume_percent)}",
         "-c:a",
-        profile.audio_encoder,
-        *profile.audio_options,
+        audio_encoder,
+        *audio_options,
         "-sn",
         "-dn",
         "-f",
         profile.muxer,
         str(output_path),
-    ]
+    ])
+    return command
 
 
 class VolumeService:
@@ -108,13 +150,17 @@ class VolumeService:
         self.runner = runner
         self.capabilities = capabilities
 
-    def resolve_profile(self, input_path: Path) -> CompressionProfile:
+    def resolve_profile(self, input_path: Path) -> VolumeProfile:
         inspection = self.inspector.inspect(input_path)
-        validate_volume_input(inspection)
-        profile = detect_compression_profile(input_path, inspection)
+        profile = resolve_volume_profile(input_path, inspection)
+        audio_encoder = (
+            profile.video.audio_encoder
+            if profile.video is not None
+            else profile.audio.encoder if profile.audio is not None else None
+        )
         if profile.muxer not in self.capabilities.muxers:
             raise FFmpegCapabilityError("The volume output container is unavailable")
-        if profile.audio_encoder not in self.capabilities.encoders:
+        if audio_encoder not in self.capabilities.encoders:
             raise FFmpegCapabilityError("The volume audio encoder is unavailable")
         return profile
 
@@ -123,7 +169,7 @@ class VolumeService:
         input_path: Path,
         output_path: Path,
         spec: VolumeSpec,
-        profile: CompressionProfile | None = None,
+        profile: VolumeProfile | None = None,
     ) -> None:
         selected_profile = profile or self.resolve_profile(input_path)
         self.runner.run(

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Volume2, Volume1, VolumeX } from "lucide-react";
+import { Volume2 } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
 import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
@@ -9,10 +9,11 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 export default function VolumePage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [volumePercent, setVolumePercent] = useState(150);
 
@@ -33,7 +34,7 @@ export default function VolumePage() {
       <header className="workspace-header">
         <h1 className="workspace-title">Adjust Audio Volume</h1>
         <p className="workspace-description">
-          Upload a video or audio file and set the volume from 0% to 300% to mute, lower or boost its sound, then export a new file at your chosen level.
+          Upload a video or audio file and set the volume from 0% to 200% to mute, lower or boost its sound, then export a new file at your chosen level.
         </p>
       </header>
 
@@ -42,7 +43,7 @@ export default function VolumePage() {
           <UploadDropzone
             onFileSelect={upload}
             uploading={uploading}
-            accept="video/*,audio/*"
+            accept="video/*,.mp3,.wav,.m4a,.flac,.ogg,.opus"
             title="Select video or audio file"
             subtitle="Drag & drop or browse media file"
           />
@@ -73,7 +74,17 @@ export default function VolumePage() {
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
             title="Volume adjustment complete"
-          />
+            subtitle={`Preview your ${volumePercent}% volume result below or download the finished file.`}
+            variant="volume"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel={`Download ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType={currentMedia?.mediaType || "video"}
+              title={`${volumePercent}% volume ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
@@ -86,7 +97,7 @@ export default function VolumePage() {
                 value={volumePercent}
                 onChange={setVolumePercent}
                 min={0}
-                max={300}
+                max={200}
                 step={5}
               />
             </div>

@@ -69,7 +69,12 @@ from backend.app.processing.trim import (
     TrimSpec,
     get_trim_service,
 )
-from backend.app.processing.volume import VolumeService, VolumeSpec, get_volume_service
+from backend.app.processing.volume import (
+    VolumeProfile,
+    VolumeService,
+    VolumeSpec,
+    get_volume_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +258,7 @@ def execute_media_job(
     compression_profile: CompressionProfile | ResolvedCompressionProfile | None = None
     extraction_profile: AudioExtractionProfile | None = None
     mute_profile: CompressionProfile | None = None
-    volume_profile: CompressionProfile | None = None
+    volume_profile: VolumeProfile | None = None
     trim_profile: TrimProfile | None = None
     speed_profile: SpeedProfile | None = None
     replace_audio_profile: ReplaceAudioProfile | None = None

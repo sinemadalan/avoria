@@ -258,6 +258,8 @@ def _public_failure_message(info: Any, operation: JobOperation) -> str:
             return "The external audio format is not supported"
         if operation is JobOperation.SPEED:
             return "Speed is not supported for this container"
+        if operation is JobOperation.VOLUME:
+            return "Volume adjustment is not supported for this container"
         return "Trim is not supported for this container"
     if isinstance(info, MediaHasNoAudioError):
         if operation is JobOperation.REPLACE_AUDIO:

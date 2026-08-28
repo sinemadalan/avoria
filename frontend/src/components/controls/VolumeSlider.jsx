@@ -2,7 +2,7 @@ export default function VolumeSlider({
   value = 100,
   onChange,
   min = 0,
-  max = 300,
+  max = 200,
   step = 5,
 }) {
   return (
@@ -28,8 +28,7 @@ export default function VolumeSlider({
       <div className="slider-ticks">
         <span>0% (Mute)</span>
         <span>100% (Original)</span>
-        <span>200% (2x)</span>
-        <span>300% (Max)</span>
+        <span>200% (2x Max)</span>
       </div>
     </div>
   );

@@ -13,7 +13,6 @@ from backend.app.infrastructure.storage import LocalStorageService
 from backend.app.processing.audio_extraction import MediaHasNoAudioError
 from backend.app.processing.compression import (
     COMPRESSION_PROFILES,
-    CompressionProfile,
     UnsupportedCompressionContainerError,
 )
 from backend.app.processing.conversion import (
@@ -22,7 +21,6 @@ from backend.app.processing.conversion import (
     LocalFFmpegCapabilities,
     OutputContainer,
 )
-from backend.app.processing.mute import MediaHasNoVideoError
 from backend.app.processing.probe import (
     MediaInspection,
     SyncFFprobeInspector,
@@ -30,6 +28,7 @@ from backend.app.processing.probe import (
 )
 from backend.app.processing.volume import (
     InvalidVolumeError,
+    VolumeProfile,
     VolumeService,
     VolumeSpec,
     build_volume_command,
@@ -56,8 +55,8 @@ VIDEO_ONLY = parse_ffprobe_payload(
 )
 AUDIO_ONLY = parse_ffprobe_payload(
     {
-        "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
-        "streams": [{"index": 0, "codec_type": "audio", "codec_name": "aac"}],
+        "format": {"format_name": "mp3"},
+        "streams": [{"index": 0, "codec_type": "audio", "codec_name": "mp3"}],
     }
 )
 
@@ -81,17 +80,18 @@ class CapturingRunner:
 class WritingVolumeAdjuster:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
-        self.calls: list[tuple[Path, Path, VolumeSpec, CompressionProfile]] = []
+        self.calls: list[tuple[Path, Path, VolumeSpec, VolumeProfile]] = []
 
-    def resolve_profile(self, input_path: Path) -> CompressionProfile:
-        return COMPRESSION_PROFILES[OutputContainer(input_path.suffix[1:].casefold())]
+    def resolve_profile(self, input_path: Path) -> VolumeProfile:
+        video = COMPRESSION_PROFILES[OutputContainer(input_path.suffix[1:].casefold())]
+        return VolumeProfile(video.extension, video.muxer, video, None, 1)
 
     def adjust(
         self,
         input_path: Path,
         output_path: Path,
         spec: VolumeSpec,
-        profile: CompressionProfile,
+        profile: VolumeProfile,
     ) -> None:
         self.calls.append((input_path, output_path, spec, profile))
         output_path.write_bytes(b"volume-output")
@@ -134,12 +134,19 @@ def test_volume_command_uses_container_profile_and_all_audio_streams(
     tmp_path: Path,
 ) -> None:
     profile = COMPRESSION_PROFILES[container]
+    volume_profile = VolumeProfile(
+        profile.extension,
+        profile.muxer,
+        profile,
+        None,
+        1,
+    )
     command = build_volume_command(
         "configured-ffmpeg",
         tmp_path / f"input.{profile.extension}",
         tmp_path / f"job.part.{profile.extension}",
         VolumeSpec(150),
-        profile,
+        volume_profile,
     )
 
     map_values = [
@@ -176,26 +183,49 @@ def test_volume_audio_encoder_policy_is_centralized(
     assert COMPRESSION_PROFILES[container].audio_encoder == audio_encoder
 
 
-@pytest.mark.parametrize(
-    ("inspection", "error_type"),
-    [(AUDIO_ONLY, MediaHasNoVideoError), (VIDEO_ONLY, MediaHasNoAudioError)],
-)
-def test_volume_rejects_media_missing_required_stream_before_ffmpeg(
-    inspection: MediaInspection,
-    error_type: type[Exception],
-) -> None:
+def test_volume_rejects_media_without_audio_before_ffmpeg() -> None:
     runner = CapturingRunner()
     service = VolumeService(
         "ffmpeg",
-        StubInspector(inspection),  # type: ignore[arg-type]
+        StubInspector(VIDEO_ONLY),  # type: ignore[arg-type]
         runner,  # type: ignore[arg-type]
         LocalFFmpegCapabilities(frozenset({"aac"}), frozenset({"mp4"})),
     )
 
-    with pytest.raises(error_type):
+    with pytest.raises(MediaHasNoAudioError):
         service.resolve_profile(Path("input.mp4"))
 
     assert runner.command is None
+
+
+def test_volume_accepts_audio_only_input() -> None:
+    runner = CapturingRunner()
+    service = VolumeService(
+        "ffmpeg",
+        StubInspector(AUDIO_ONLY),  # type: ignore[arg-type]
+        runner,  # type: ignore[arg-type]
+        LocalFFmpegCapabilities(frozenset({"libmp3lame"}), frozenset({"mp3"})),
+    )
+
+    profile = service.resolve_profile(Path("input.mp3"))
+
+    assert profile.video is None
+    assert profile.audio is not None
+    assert profile.extension == "mp3"
+
+    command = build_volume_command(
+        "configured-ffmpeg",
+        Path("input.mp3"),
+        Path("output.part.mp3"),
+        VolumeSpec(150),
+        profile,
+    )
+    assert "-vn" in command
+    assert "-c:v" not in command
+    assert command[command.index("-map") + 1] == "0:a"
+    assert command[command.index("-af") + 1] == "volume=1.5"
+    assert command[command.index("-c:a") + 1] == "libmp3lame"
+    assert command[command.index("-f") + 1] == "mp3"
 
 
 def test_volume_rejects_unsupported_container_before_ffmpeg() -> None:
@@ -219,13 +249,7 @@ def test_volume_rejects_unsupported_container_before_ffmpeg() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("inspection", "error_type"),
-    [(AUDIO_ONLY, MediaHasNoVideoError), (VIDEO_ONLY, MediaHasNoAudioError)],
-)
 def test_volume_stream_validation_creates_no_worker_output(
-    inspection: MediaInspection,
-    error_type: type[Exception],
     tmp_path: Path,
 ) -> None:
     media_id = str(uuid4())
@@ -234,12 +258,12 @@ def test_volume_stream_validation_creates_no_worker_output(
     runner = CapturingRunner()
     service = VolumeService(
         "ffmpeg",
-        StubInspector(inspection),  # type: ignore[arg-type]
+        StubInspector(VIDEO_ONLY),  # type: ignore[arg-type]
         runner,  # type: ignore[arg-type]
         LocalFFmpegCapabilities(frozenset({"aac"}), frozenset({"mp4"})),
     )
 
-    with pytest.raises(error_type):
+    with pytest.raises(MediaHasNoAudioError):
         execute_media_job(
             job_id=job_id,
             media_id=media_id,
