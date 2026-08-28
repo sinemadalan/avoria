@@ -36,14 +36,16 @@ export default function MediaPreview({
           Your browser does not support video playback.
         </video>
       ) : (
-        <audio
-          src={src}
-          controls
-          className="audio-preview-element"
-          onLoadedMetadata={onLoadedMetadata}
-        >
-          Your browser does not support audio playback.
-        </audio>
+        <div className="audio-preview-body">
+          <audio
+            src={src}
+            controls
+            className="audio-preview-element"
+            onLoadedMetadata={onLoadedMetadata}
+          >
+            Your browser does not support audio playback.
+          </audio>
+        </div>
       )}
     </div>
   );

@@ -491,10 +491,15 @@
   display: block;
 }
 
+.audio-preview-body {
+  padding: 1.25rem 1rem;
+  background-color: var(--bg-surface);
+}
+
 .audio-preview-element {
   width: 100%;
-  padding: 1.5rem 1rem;
-  background-color: var(--bg-surface);
+  min-height: 54px;
+  display: block;
 }
 
 /* ==========================================================================
@@ -1182,8 +1187,7 @@
   padding: 0.75rem 1rem;
 }
 
-.extract-audio-result-card .audio-preview-element {
-  min-height: 104px;
+.extract-audio-result-card .audio-preview-body {
   padding: 1.6rem 0.75rem;
 }
 

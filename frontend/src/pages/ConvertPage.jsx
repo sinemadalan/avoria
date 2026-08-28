@@ -13,10 +13,16 @@ import { getConversionOptions } from "../api/media.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
 
 const DEFAULT_CONTAINERS = [
-  { id: "mp4", label: "MP4", desc: "Maximum compatibility across all devices and web platforms.", videoCodec: "h264", audioCodec: "aac" },
-  { id: "mov", label: "MOV", desc: "Apple standard format, optimal for editing in Final Cut / Premiere.", videoCodec: "h264", audioCodec: "aac" },
-  { id: "webm", label: "WebM", desc: "Modern open web format with superior compression for browsers.", videoCodec: "vp9", audioCodec: "opus" },
-  { id: "mkv", label: "MKV", desc: "Flexible container supporting high fidelity and multiple audio streams.", videoCodec: "h264", audioCodec: "aac" },
+  { id: "mp4", label: "MP4", desc: "Maximum compatibility across all devices and web platforms.", videoCodec: "h264", audioCodec: "aac", isAudioOnly: false },
+  { id: "mov", label: "MOV", desc: "Apple standard format, optimal for editing in Final Cut / Premiere.", videoCodec: "h264", audioCodec: "aac", isAudioOnly: false },
+  { id: "webm", label: "WebM", desc: "Modern open web format with superior compression for browsers.", videoCodec: "vp9", audioCodec: "opus", isAudioOnly: false },
+  { id: "mkv", label: "MKV", desc: "Flexible container supporting high fidelity and multiple audio streams.", videoCodec: "h264", audioCodec: "aac", isAudioOnly: false },
+  { id: "mp3", label: "MP3", desc: "Universal compressed audio for playback and sharing.", videoCodec: "none", audioCodec: "mp3", isAudioOnly: true },
+  { id: "wav", label: "WAV", desc: "Uncompressed PCM audio for editing and archiving.", videoCodec: "none", audioCodec: "pcm", isAudioOnly: true },
+  { id: "flac", label: "FLAC", desc: "Lossless compressed audio with full source quality.", videoCodec: "none", audioCodec: "flac", isAudioOnly: true },
+  { id: "ogg", label: "OGG", desc: "Open audio container supporting Vorbis, Opus and FLAC.", videoCodec: "none", audioCodec: "vorbis", isAudioOnly: true },
+  { id: "m4a", label: "M4A", desc: "Efficient AAC audio for Apple devices and modern players.", videoCodec: "none", audioCodec: "aac", isAudioOnly: true },
+  { id: "opus", label: "OPUS", desc: "Modern high-efficiency audio for web and speech.", videoCodec: "none", audioCodec: "opus", isAudioOnly: true },
 ];
 
 export default function ConvertPage() {
@@ -48,6 +54,7 @@ export default function ConvertPage() {
               desc: `Extension: ${c.extension}, Codecs: ${displayCodecs.join(", ")}`,
               videoCodec: c.video_codecs?.[0] || "h264",
               audioCodec: c.audio_codecs?.[0] || "aac",
+              isAudioOnly,
             };
           });
           setContainers(mapped);
@@ -58,6 +65,23 @@ export default function ConvertPage() {
     }
     loadOptions();
   }, []);
+
+  const isAudioInput = currentMedia?.mediaType === "audio";
+  const visibleContainers = isAudioInput
+    ? containers.filter((item) => item.isAudioOnly)
+    : containers;
+  const selectedTarget = containers.find((item) => item.id === selectedContainer);
+  const outputMediaType = selectedTarget?.isAudioOnly ? "audio" : "video";
+
+  useEffect(() => {
+    if (visibleContainers.length === 0) return;
+    if (visibleContainers.some((item) => item.id === selectedContainer)) return;
+
+    const firstAvailable = visibleContainers[0];
+    setSelectedContainer(firstAvailable.id);
+    setVideoCodec(firstAvailable.videoCodec);
+    setAudioCodec(firstAvailable.audioCodec);
+  }, [selectedContainer, visibleContainers]);
 
   const handleSelectContainer = (item) => {
     setSelectedContainer(item.id);
@@ -82,9 +106,9 @@ export default function ConvertPage() {
   return (
     <div className="workspace convert-workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Convert Video</h1>
+        <h1 className="workspace-title">Convert Video & Audio</h1>
         <p className="workspace-description">
-          Upload your video, choose MP4, MOV, WebM or MKV as the output format, and create a new file using compatible video and audio codecs without changing its original content or duration.
+          Upload a video or audio file and convert it to a compatible media container and codec without changing its original content or duration.
         </p>
       </header>
 
@@ -94,9 +118,9 @@ export default function ConvertPage() {
           <UploadDropzone
             onFileSelect={upload}
             uploading={uploading}
-            accept="video/*"
-            title="Select video to convert"
-            subtitle="Drag & drop or browse MP4, MOV, MKV, WebM, AVI"
+            accept="video/*,audio/*,.m4a,.aac,.flac,.ogg,.opus"
+            title="Select video or audio to convert"
+            subtitle="Video: MP4, MOV, MKV, WebM, AVI · Audio: MP3, WAV, M4A, AAC, FLAC, OGG, Opus"
           />
         ) : (
           <div className="workspace-section">
@@ -106,7 +130,7 @@ export default function ConvertPage() {
             />
             <MediaPreview
               src={currentMedia.previewUrl}
-              mediaType="video"
+              mediaType={currentMedia.mediaType}
               title={currentMedia.originalFilename}
             />
           </div>
@@ -115,7 +139,7 @@ export default function ConvertPage() {
         {/* Processing State */}
         {isProcessing && (
           <ProcessingState
-            title="Converting your video"
+            title={`Converting your ${isAudioInput ? "audio" : "video"}`}
             subtitle={`Transcoding to ${selectedContainer.toUpperCase()} (${videoCodec === "none" ? audioCodec.toUpperCase() : `${videoCodec.toUpperCase()}/${audioCodec.toUpperCase()}`})...`}
           />
         )}
@@ -124,13 +148,13 @@ export default function ConvertPage() {
         {isCompleted && (
           <ResultPanel
             output={output}
-            mediaType="video"
+            mediaType={outputMediaType}
             onReset={resetJob}
-            title="Your converted video is ready"
+            title={`Your converted ${outputMediaType} is ready`}
             subtitle="The new file is ready for playback, editing or sharing."
             variant="conversion"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download video"
+            downloadLabel={`Download ${outputMediaType}`}
           />
         )}
 
@@ -143,11 +167,11 @@ export default function ConvertPage() {
             <div className="workspace-section">
               <h2 className="workspace-section-title">Target Container Format</h2>
               <p className="workspace-section-subtitle">
-                Select the format you want your video saved as.
+                Select the format you want your {isAudioInput ? "audio" : "video"} saved as.
               </p>
 
               <div className="option-cards-grid">
-                {containers.map((item) => (
+                {visibleContainers.map((item) => (
                   <OptionCard
                     key={item.id}
                     title={item.label}
@@ -167,7 +191,7 @@ export default function ConvertPage() {
                 disabled={!currentMedia}
               >
                 <RefreshCw size={18} />
-                {currentMedia ? `Convert to ${selectedContainer.toUpperCase()}` : "Upload a video to convert"}
+                {currentMedia ? `Convert to ${selectedContainer.toUpperCase()}` : "Upload video or audio to convert"}
               </button>
             </div>
           </>
