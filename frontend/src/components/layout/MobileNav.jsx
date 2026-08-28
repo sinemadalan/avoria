@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { X, Sparkles } from "lucide-react";
+import { X } from "lucide-react";
 import { navItems } from "./Sidebar.jsx";
+import avoriaLogo from "../../styles/avoria_logo.png";
 
 export default function MobileNav({ isOpen, onClose }) {
   if (!isOpen) return null;
@@ -31,10 +32,8 @@ export default function MobileNav({ isOpen, onClose }) {
             style={{ padding: 0 }}
             onClick={onClose}
           >
-            <div className="sidebar-logo-icon">
-              <Sparkles size={18} />
-            </div>
-            <span className="sidebar-brand-name">avoria</span>
+            <img className="sidebar-logo-image" src={avoriaLogo} alt="" />
+            <span className="sidebar-brand-name">Avoria</span>
           </NavLink>
           <button
             onClick={onClose}

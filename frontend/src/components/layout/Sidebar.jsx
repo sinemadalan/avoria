@@ -11,8 +11,9 @@ import {
   VolumeX,
   Volume2,
   AudioLines,
-  Sparkles,
+  ChevronRight,
 } from "lucide-react";
+import avoriaLogo from "../../styles/avoria_logo.png";
 
 export const navItems = [
   {
@@ -41,15 +42,26 @@ export const navItems = [
   },
 ];
 
-export default function Sidebar({ onItemClick }) {
+export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
   return (
-    <aside className="sidebar" aria-label="Main Navigation">
+    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`} aria-label="Main Navigation">
       <NavLink to="/" className="sidebar-brand" onClick={onItemClick}>
-        <div className="sidebar-logo-icon">
-          <Sparkles size={18} />
-        </div>
-        <span className="sidebar-brand-name">avoria</span>
+        <img className="sidebar-logo-image" src={avoriaLogo} alt="" />
+        <span className="sidebar-brand-name">Avoria</span>
       </NavLink>
+
+      {onToggle && (
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <ChevronRight size={17} />
+        </button>
+      )}
 
       <nav className="sidebar-nav">
         {navItems.map((section, idx) => (
@@ -69,6 +81,8 @@ export default function Sidebar({ onItemClick }) {
                       isActive ? "sidebar-link active" : "sidebar-link"
                     }
                     onClick={onItemClick}
+                    aria-label={item.label}
+                    title={collapsed ? item.label : undefined}
                   >
                     <Icon size={18} />
                     <span>{item.label}</span>

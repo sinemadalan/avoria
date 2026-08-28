@@ -1,16 +1,21 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { Menu, Sparkles } from "lucide-react";
+import { Menu } from "lucide-react";
 import Sidebar from "./Sidebar.jsx";
 import MobileNav from "./MobileNav.jsx";
+import avoriaLogo from "../../styles/avoria_logo.png";
 
 export default function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="app-shell">
       {/* Desktop Sidebar */}
-      <Sidebar />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((current) => !current)}
+      />
 
       {/* Mobile Drawer Navigation */}
       <MobileNav
@@ -23,12 +28,12 @@ export default function AppShell() {
         {/* Mobile Header with Hamburger */}
         <header className="mobile-header">
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div className="sidebar-logo-icon" style={{ width: 28, height: 28 }}>
-              <Sparkles size={16} />
-            </div>
-            <span className="sidebar-brand-name" style={{ fontSize: "1.05rem" }}>
-              avoria
-            </span>
+            <img
+              className="sidebar-logo-image sidebar-logo-image--mobile"
+              src={avoriaLogo}
+              alt=""
+            />
+            <span className="sidebar-brand-name">Avoria</span>
           </div>
           <button
             className="mobile-menu-btn"

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Music, Disc, FileAudio } from "lucide-react";
+import { Music } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
 import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
@@ -9,6 +9,7 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 const AUDIO_FORMATS = [
   { id: "mp3", label: "MP3 Audio", badge: "Universal", desc: "Standard 320kbps MP3 compatible with every audio player." },
@@ -21,7 +22,7 @@ const AUDIO_FORMATS = [
 
 export default function ExtractAudioPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [format, setFormat] = useState("mp3");
 
@@ -81,7 +82,17 @@ export default function ExtractAudioPage() {
             mediaType="audio"
             onReset={resetJob}
             title="Audio extraction complete"
-          />
+            subtitle={`Listen to your extracted ${format.toUpperCase()} audio below or download the finished file.`}
+            variant="extract-audio"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download audio"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType="audio"
+              title={`Extracted ${format.toUpperCase()} audio`}
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
@@ -94,7 +105,7 @@ export default function ExtractAudioPage() {
                 Choose the destination audio container and codec.
               </p>
 
-              <div className="option-cards-grid">
+              <div className="option-cards-grid extract-audio-format-grid">
                 {AUDIO_FORMATS.map((item) => (
                   <OptionCard
                     key={item.id}
