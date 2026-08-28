@@ -121,6 +121,7 @@ export default function MergePage() {
               src={getJobDownloadUrl(jobId)}
               mediaType="video"
               title="Merged video"
+              aspectRatio={targetAspectRatio}
             />
           </ResultPanel>
         )}

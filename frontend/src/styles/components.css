@@ -394,6 +394,27 @@
   box-shadow: var(--shadow-md);
 }
 
+.media-preview-box--portrait {
+  width: min(100%, 315px);
+  margin-inline: auto;
+}
+
+.media-preview-box--square {
+  width: min(100%, 560px);
+  margin-inline: auto;
+}
+
+.media-preview-box--social-portrait {
+  width: min(100%, 448px);
+  margin-inline: auto;
+}
+
+.media-preview-box--portrait .media-preview-element,
+.media-preview-box--square .media-preview-element,
+.media-preview-box--social-portrait .media-preview-element {
+  max-height: 560px;
+}
+
 .media-preview-header {
   display: flex;
   align-items: center;
