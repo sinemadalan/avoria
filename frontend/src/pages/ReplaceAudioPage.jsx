@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AudioLines, Music, Repeat, Film } from "lucide-react";
+import { AudioLines, Music, Film } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
 import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
@@ -9,10 +9,11 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { uploadMedia } from "../api/media.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 export default function ReplaceAudioPage() {
   const { currentMedia, upload, uploading, clearCurrentMedia } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [audioMedia, setAudioMedia] = useState(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
@@ -77,7 +78,17 @@ export default function ReplaceAudioPage() {
               setAudioMedia(null);
             }}
             title="Audio replaced successfully"
-          />
+            subtitle="Preview the video with its new soundtrack below or download the finished file."
+            variant="replace-audio"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType="video"
+              title="Video with replaced audio"
+            />
+          </ResultPanel>
         )}
 
         {error && <ErrorBanner message={error} onRetry={handleProcess} />}
