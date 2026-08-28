@@ -1,4 +1,4 @@
-import { VolumeX, ShieldAlert } from "lucide-react";
+import { VolumeX } from "lucide-react";
 import UploadDropzone from "../components/media/UploadDropzone.jsx";
 import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
@@ -7,10 +7,11 @@ import ResultPanel from "../components/feedback/ResultPanel.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { getJobDownloadUrl } from "../api/jobs.js";
 
 export default function MutePage() {
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
-  const { submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
+  const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const handleProcess = async () => {
     if (!currentMedia?.mediaId) return;
@@ -67,7 +68,17 @@ export default function MutePage() {
             mediaType="video"
             onReset={resetJob}
             title="Video muted successfully"
-          />
+            subtitle="Preview your silent video below or download the finished file."
+            variant="mute"
+            downloadUrl={getJobDownloadUrl(jobId)}
+            downloadLabel="Download video"
+          >
+            <MediaPreview
+              src={getJobDownloadUrl(jobId)}
+              mediaType="video"
+              title="Muted video"
+            />
+          </ResultPanel>
         )}
 
         {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
