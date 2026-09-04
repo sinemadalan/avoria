@@ -26,6 +26,8 @@ const tr = {
   "Powered by": "Geliştiren",
   "Language": "Dil",
   "Switch language": "Dili değiştir",
+  "Enable dark theme": "Koyu temayı aç",
+  "Enable light theme": "Açık temayı aç",
 
   "Your complete media workspace": "Eksiksiz medya çalışma alanınız",
   "Every media tool you need.": "İhtiyacınız olan tüm medya araçları.",

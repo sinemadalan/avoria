@@ -24,8 +24,8 @@ export default function ErrorBanner({
           style={{
             padding: "0.35rem 0.75rem",
             fontSize: "0.8rem",
-            borderColor: "rgba(239, 68, 68, 0.4)",
-            color: "#fca5a5",
+            borderColor: "var(--danger-border)",
+            color: "var(--danger)",
           }}
         >
           <RefreshCw size={12} />

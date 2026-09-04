@@ -18,11 +18,33 @@
   position: relative;
 }
 
-.desktop-language-switcher {
+.desktop-toolbar {
   position: absolute;
   top: 1.15rem;
   right: 1.5rem;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.theme-toggle {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--control-bg);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  color: var(--accent-primary);
+  border-color: var(--border-accent);
+  transform: translateY(-1px);
 }
 
 .language-switcher {
@@ -32,7 +54,7 @@
   min-height: 34px;
   padding: 0.25rem 0.45rem;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--control-bg);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-sm);
@@ -50,7 +72,7 @@
 
 .language-switcher button:hover,
 .language-switcher button.active {
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--accent-primary);
 }
 
@@ -131,20 +153,20 @@
   z-index: 2;
   width: 26px;
   height: 26px;
-  border: 1px solid rgba(6, 111, 67, 0.18);
+  border: 1px solid var(--border-medium);
   border-radius: var(--radius-full);
   display: grid;
   place-items: center;
   color: var(--accent-primary);
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(13, 53, 35, 0.14);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
   transition: color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .sidebar-toggle:hover {
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--accent-primary);
-  box-shadow: 0 3px 10px rgba(13, 53, 35, 0.2);
+  box-shadow: var(--shadow-md);
 }
 
 .sidebar-toggle svg {
@@ -518,7 +540,7 @@
    ========================================================================== */
 
 .media-preview-box {
-  background-color: #000;
+  background-color: var(--media-canvas);
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
@@ -562,7 +584,7 @@
 .media-preview-element {
   width: 100%;
   max-height: 440px;
-  background-color: #000;
+  background-color: var(--media-canvas);
   display: block;
 }
 
@@ -701,7 +723,7 @@
 .aspect-box-preview {
   border: 1.5px solid currentColor;
   border-radius: 2px;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--aspect-preview-bg);
 }
 
 .aspect-label {
@@ -766,7 +788,7 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-medium);
   cursor: pointer;
   transition: transform var(--transition-fast);
 }
@@ -982,7 +1004,7 @@
   justify-content: center;
   gap: 0.5rem;
   background: var(--accent-gradient);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 0.95rem;
   font-weight: 600;
   padding: 0.85rem 1.75rem;
@@ -998,7 +1020,7 @@
 .action-btn-primary:hover:not(:disabled) {
   opacity: 0.94;
   transform: translateY(-1px);
-  box-shadow: 0 0 28px rgba(56, 189, 248, 0.35);
+  box-shadow: var(--shadow-glow);
 }
 
 .action-btn-primary:disabled {
@@ -1194,7 +1216,7 @@
 .merge-result-card {
   padding: 1.2rem 1.3rem;
   gap: .9rem;
-  border-color: #d9e4db;
+  border-color: var(--border-medium);
 }
 
 .compression-result-card .result-success-icon,
@@ -1280,10 +1302,10 @@
   align-items: flex-start;
   gap: 0.85rem;
   background-color: var(--danger-bg);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--danger-border);
   border-radius: var(--radius-md);
   padding: 1rem 1.25rem;
-  color: #fca5a5;
+  color: var(--danger);
   font-size: 0.9rem;
 }
 
@@ -1383,7 +1405,7 @@
    ========================================================================== */
 
 @media (max-width: 900px) {
-  .desktop-language-switcher {
+  .desktop-toolbar {
     display: none;
   }
 
@@ -1413,7 +1435,7 @@
 }
 
 /* ========================================================================== 
-   AVORIA LIGHT WORKSPACE THEME
+   AVORIA WORKSPACE THEME
    ========================================================================== */
 
 .app-main {
@@ -1498,7 +1520,7 @@
 }
 
 .dropzone-container {
-  background: rgba(255,255,255,.64);
+  background: var(--dropzone-bg);
   border-color: var(--border-medium);
   padding: 2.65rem 1.5rem;
 }
@@ -1506,7 +1528,7 @@
 .dropzone-container:hover,
 .dropzone-container.is-dragover {
   border-color: var(--accent-primary);
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .media-file-card,
@@ -1535,7 +1557,7 @@
 }
 
 .action-btn-secondary {
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .home-page {
@@ -1605,7 +1627,7 @@
   gap: .65rem;
   margin-top: 1.8rem;
   padding: .78rem 1.15rem;
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--accent-primary);
   border-radius: 8px;
   font-size: .82rem;
@@ -1684,8 +1706,8 @@
 }
 
 .home-tool-card:hover {
-  background: #fff;
-  border-color: #bfd1c2;
+  background: var(--bg-surface);
+  border-color: var(--border-accent);
   transform: translateY(-2px);
 }
 

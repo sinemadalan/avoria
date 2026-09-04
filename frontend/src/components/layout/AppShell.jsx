@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import Sidebar from "./Sidebar.jsx";
 import MobileNav from "./MobileNav.jsx";
 import LanguageSwitcher from "./LanguageSwitcher.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 import avoriaLogo from "../../styles/avoria_logo.png";
 import { useLanguage } from "../../context/LanguageContext.jsx";
 
@@ -28,7 +29,8 @@ export default function AppShell() {
 
       {/* Main Content Area */}
       <div className="app-main">
-        <div className="desktop-language-switcher">
+        <div className="desktop-toolbar">
+          <ThemeToggle />
           <LanguageSwitcher />
         </div>
         {/* Mobile Header with Hamburger */}
@@ -42,6 +44,7 @@ export default function AppShell() {
             <span className="sidebar-brand-name">Avoria</span>
           </div>
           <div className="mobile-header-actions">
+            <ThemeToggle />
             <LanguageSwitcher />
             <button
               className="mobile-menu-btn"
