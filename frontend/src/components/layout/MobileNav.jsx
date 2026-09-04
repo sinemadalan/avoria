@@ -2,8 +2,10 @@ import { NavLink } from "react-router-dom";
 import { X } from "lucide-react";
 import { navItems } from "./Sidebar.jsx";
 import avoriaLogo from "../../styles/avoria_logo.png";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 export default function MobileNav({ isOpen, onClose }) {
+  const { t } = useLanguage();
   if (!isOpen) return null;
 
   return (
@@ -15,7 +17,7 @@ export default function MobileNav({ isOpen, onClose }) {
       />
       <aside
         className={`mobile-drawer ${isOpen ? "open" : ""}`}
-        aria-label="Mobile Navigation"
+        aria-label={t("Mobile Navigation")}
       >
         <div
           style={{
@@ -37,7 +39,7 @@ export default function MobileNav({ isOpen, onClose }) {
           </NavLink>
           <button
             onClick={onClose}
-            aria-label="Close navigation"
+            aria-label={t("Close navigation")}
             style={{
               color: "var(--text-secondary)",
               padding: "0.5rem",
@@ -52,7 +54,7 @@ export default function MobileNav({ isOpen, onClose }) {
           {navItems.map((section, idx) => (
             <div key={idx} className="sidebar-section">
               {section.category && (
-                <h2 className="sidebar-section-title">{section.category}</h2>
+                <h2 className="sidebar-section-title">{t(section.category)}</h2>
               )}
               <div className="sidebar-link-group">
                 {section.items.map((item) => {
@@ -68,7 +70,7 @@ export default function MobileNav({ isOpen, onClose }) {
                       onClick={onClose}
                     >
                       <Icon size={18} />
-                      <span>{item.label}</span>
+                      <span>{t(item.label)}</span>
                     </NavLink>
                   );
                 })}
@@ -78,7 +80,7 @@ export default function MobileNav({ isOpen, onClose }) {
         </nav>
 
         <div className="sidebar-credit">
-          <span>Powered by</span>
+          <span>{t("Powered by")}</span>
           <strong>Sinem ADALAN</strong>
         </div>
       </aside>

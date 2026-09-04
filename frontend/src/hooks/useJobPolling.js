@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createJob, getJobStatus } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const POLLING_INTERVAL_MS = 1500;
 const MAX_TRANSIENT_POLL_ERRORS = 6;
@@ -10,6 +11,7 @@ function isRetryablePollingError(error) {
 }
 
 export function useJobPolling() {
+  const { t } = useLanguage();
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState("idle"); // idle | queued | processing | completed | failed
   const [progress, setProgress] = useState(null);
@@ -46,10 +48,10 @@ export function useJobPolling() {
     } catch (err) {
       if (!isMountedRef.current) return;
       setStatus("failed");
-      setError(err.message || "Failed to start processing job.");
+      setError(err.message || t("Failed to start processing job."));
       throw err;
     }
-  }, []);
+  }, [t]);
 
   const poll = useCallback(async (id) => {
     clearTimer();
@@ -70,7 +72,7 @@ export function useJobPolling() {
       }
 
       if (data.status === "failed") {
-        setError(data.error || "Media processing failed.");
+        setError(data.error || t("Media processing failed."));
         return;
       }
 
@@ -95,11 +97,11 @@ export function useJobPolling() {
       setStatus("failed");
       setError(
         isRetryablePollingError(err)
-          ? "Processing finished, but its status could not be checked. Please try again."
-          : (err.message || "Error checking job status."),
+          ? t("Processing finished, but its status could not be checked. Please try again.")
+          : (err.message || t("Error checking job status.")),
       );
     }
-  }, []);
+  }, [t]);
 
   const resetJob = useCallback(() => {
     clearTimer();

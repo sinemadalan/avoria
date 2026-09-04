@@ -14,6 +14,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import avoriaLogo from "../../styles/avoria_logo.png";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 export const navItems = [
   {
@@ -43,8 +44,9 @@ export const navItems = [
 ];
 
 export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
+  const { t } = useLanguage();
   return (
-    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`} aria-label="Main Navigation">
+    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`} aria-label={t("Main Navigation")}>
       <NavLink to="/" className="sidebar-brand" onClick={onItemClick}>
         <img className="sidebar-logo-image" src={avoriaLogo} alt="" />
         <span className="sidebar-brand-name">Avoria</span>
@@ -55,9 +57,9 @@ export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
           type="button"
           className="sidebar-toggle"
           onClick={onToggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
           aria-expanded={!collapsed}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
         >
           <ChevronRight size={17} />
         </button>
@@ -67,7 +69,7 @@ export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
         {navItems.map((section, idx) => (
           <div key={idx} className="sidebar-section">
             {section.category && (
-              <h2 className="sidebar-section-title">{section.category}</h2>
+              <h2 className="sidebar-section-title">{t(section.category)}</h2>
             )}
             <div className="sidebar-link-group">
               {section.items.map((item) => {
@@ -81,11 +83,11 @@ export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
                       isActive ? "sidebar-link active" : "sidebar-link"
                     }
                     onClick={onItemClick}
-                    aria-label={item.label}
-                    title={collapsed ? item.label : undefined}
+                    aria-label={t(item.label)}
+                    title={collapsed ? t(item.label) : undefined}
                   >
                     <Icon size={18} />
-                    <span>{item.label}</span>
+                    <span>{t(item.label)}</span>
                   </NavLink>
                 );
               })}
@@ -95,7 +97,7 @@ export default function Sidebar({ onItemClick, collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar-credit">
-        <span>Powered by</span>
+        <span>{t("Powered by")}</span>
         <strong>Sinem ADALAN</strong>
       </div>
     </aside>

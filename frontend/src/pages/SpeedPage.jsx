@@ -9,10 +9,12 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
 export default function SpeedPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -34,9 +36,9 @@ export default function SpeedPage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Adjust Playback Speed</h1>
+        <h1 className="workspace-title">{t("Adjust Playback Speed")}</h1>
         <p className="workspace-description">
-          Upload a video or audio file, choose one of the supported playback speeds from 0.5x to 4x, and create a faster or slower version while keeping voices and music natural.
+          {t("Upload a video or audio file, choose one of the supported playback speeds from 0.5x to 4x, and create a faster or slower version while keeping voices and music natural.")}
         </p>
       </header>
 
@@ -46,8 +48,8 @@ export default function SpeedPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*,audio/*"
-            title="Select video or audio to adjust speed"
-            subtitle="Drag & drop or browse media file"
+            title={t("Select video or audio to adjust speed")}
+            subtitle={t("Drag & drop or browse media file")}
           />
         ) : (
           <div className="workspace-section">
@@ -65,8 +67,8 @@ export default function SpeedPage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Recalculating frame timestamps"
-            subtitle={`Applying ${speed}x tempo transformation...`}
+            title={t("Recalculating frame timestamps")}
+            subtitle={t("Applying {speed}x tempo transformation...", { speed })}
           />
         )}
 
@@ -75,21 +77,21 @@ export default function SpeedPage() {
             output={output}
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
-            title="Adjusted media ready"
-            subtitle={`Preview your ${speed}x result below or download the finished file.`}
+            title={t("Adjusted media ready")}
+            subtitle={t("Preview your {speed}x result below or download the finished file.", { speed })}
             variant="speed"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download media"
+            downloadLabel={t("Download media")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType={currentMedia?.mediaType || "video"}
-              title={`${speed}x ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+              title={`${speed}x ${t(currentMedia?.mediaType === "audio" ? "Audio file" : "Video file").toLocaleLowerCase()}`}
             />
           </ResultPanel>
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
@@ -97,7 +99,7 @@ export default function SpeedPage() {
               <div className="slider-container">
                 <div className="slider-header">
                   <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-primary)" }}>
-                    Speed Multiplier
+                    {t("Speed Multiplier")}
                   </span>
                   <span className="slider-value-badge" style={{ fontSize: "1.3rem" }}>
                     {speed.toFixed(2).replace(/\.00$/, "")}x
@@ -112,7 +114,7 @@ export default function SpeedPage() {
                   value={selectedSpeedIndex}
                   onChange={(e) => setSpeed(SPEED_PRESETS[Number(e.target.value)])}
                   className="range-input"
-                  aria-label="Speed multiplier"
+                  aria-label={t("Speed multiplier")}
                   aria-valuetext={`${speed}x`}
                 />
 
@@ -137,7 +139,7 @@ export default function SpeedPage() {
                 disabled={!currentMedia}
               >
                 <FastForward size={18} />
-                {currentMedia ? `Apply ${speed}x Playback Speed` : "Upload media to adjust speed"}
+                {currentMedia ? t("Apply {speed}x Playback Speed", { speed }) : t("Upload media to adjust speed")}
               </button>
             </div>
           </>

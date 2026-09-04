@@ -10,8 +10,10 @@ import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { uploadMedia } from "../api/media.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 export default function ReplaceAudioPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -33,7 +35,7 @@ export default function ReplaceAudioPage() {
         previewUrl,
       });
     } catch (err) {
-      setAudioError(err.message || "Failed to upload audio file.");
+      setAudioError(err.message || t("Failed to upload audio file."));
     } finally {
       setUploadingAudio(false);
     }
@@ -55,17 +57,17 @@ export default function ReplaceAudioPage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Replace Audio</h1>
+        <h1 className="workspace-title">{t("Replace Audio")}</h1>
         <p className="workspace-description">
-          Upload a base video and a new audio track to replace the original soundtrack. You can also loop shorter audio so it continues for the full video duration.
+          {t("Upload a base video and a new audio track to replace the original soundtrack. You can also loop shorter audio so it continues for the full video duration.")}
         </p>
       </header>
 
       <div className="workspace-body">
         {isProcessing && (
           <ProcessingState
-            title="Multiplexing new audio track"
-            subtitle="Aligning replacement audio with video stream..."
+            title={t("Multiplexing new audio track")}
+            subtitle={t("Aligning replacement audio with video stream...")}
           />
         )}
 
@@ -77,16 +79,16 @@ export default function ReplaceAudioPage() {
               resetJob();
               setAudioMedia(null);
             }}
-            title="Audio replaced successfully"
-            subtitle="Preview the video with its new soundtrack below or download the finished file."
+            title={t("Audio replaced successfully")}
+            subtitle={t("Preview the video with its new soundtrack below or download the finished file.")}
             variant="replace-audio"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download video"
+            downloadLabel={t("Download video")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType="video"
-              title="Video with replaced audio"
+              title={t("Video with replaced audio")}
             />
           </ResultPanel>
         )}
@@ -99,7 +101,7 @@ export default function ReplaceAudioPage() {
             <div className="workspace-section">
               <h2 className="workspace-section-title">
                 <Film size={16} color="var(--accent-primary)" />
-                1. Base Video File
+                {t("1. Base Video File")}
               </h2>
 
               {!currentMedia ? (
@@ -107,8 +109,8 @@ export default function ReplaceAudioPage() {
                   onFileSelect={upload}
                   uploading={uploading}
                   accept="video/*"
-                  title="Select base video file"
-                  subtitle="Drag & drop or browse video"
+                  title={t("Select base video file")}
+                  subtitle={t("Drag & drop or browse video")}
                 />
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -129,7 +131,7 @@ export default function ReplaceAudioPage() {
             <div className="workspace-section">
               <h2 className="workspace-section-title">
                 <Music size={16} color="var(--accent-primary)" />
-                2. Replacement Audio Track
+                {t("2. Replacement Audio Track")}
               </h2>
 
               {audioError && <ErrorBanner message={audioError} />}
@@ -139,8 +141,8 @@ export default function ReplaceAudioPage() {
                   onFileSelect={handleUploadAudio}
                   uploading={uploadingAudio}
                   accept="audio/*"
-                  title="Select replacement audio file"
-                  subtitle="Drag & drop MP3, WAV, FLAC, M4A, Opus, or AAC"
+                  title={t("Select replacement audio file")}
+                  subtitle={t("Drag & drop MP3, WAV, FLAC, M4A, Opus, or AAC")}
                 />
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -152,7 +154,7 @@ export default function ReplaceAudioPage() {
                       <div className="media-file-meta">
                         <div className="media-file-name">{audioMedia.filename}</div>
                         <div className="media-file-details">
-                          <span>Audio Track</span>
+                          <span>{t("Audio Track")}</span>
                         </div>
                       </div>
                     </div>
@@ -161,7 +163,7 @@ export default function ReplaceAudioPage() {
                       onClick={() => setAudioMedia(null)}
                       className="media-file-action"
                     >
-                      Change audio
+                      {t("Change audio")}
                     </button>
                   </div>
 
@@ -176,7 +178,7 @@ export default function ReplaceAudioPage() {
 
             {/* Step 3: Playback Options */}
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Audio Loop Settings</h2>
+              <h2 className="workspace-section-title">{t("Audio Loop Settings")}</h2>
 
               <label
                 style={{
@@ -198,10 +200,10 @@ export default function ReplaceAudioPage() {
                 />
                 <div>
                   <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-primary)" }}>
-                    Loop soundtrack
+                    {t("Loop soundtrack")}
                   </div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                    Repeat audio if it is shorter than the total video duration.
+                    {t("Repeat audio if it is shorter than the total video duration.")}
                   </div>
                 </div>
               </label>
@@ -217,10 +219,10 @@ export default function ReplaceAudioPage() {
               >
                 <AudioLines size={18} />
                 {currentMedia && audioMedia
-                  ? "Replace Audio Track"
+                  ? t("Replace Audio Track")
                   : !currentMedia
-                  ? "Upload base video first"
-                  : "Upload replacement audio track"}
+                  ? t("Upload base video first")
+                  : t("Upload replacement audio track")}
               </button>
             </div>
           </>

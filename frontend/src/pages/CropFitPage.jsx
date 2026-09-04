@@ -11,6 +11,7 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const FIT_MODES = [
   {
@@ -43,6 +44,7 @@ const BG_TYPES = [
 ];
 
 export default function CropFitPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -77,9 +79,9 @@ export default function CropFitPage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Crop & Fit</h1>
+        <h1 className="workspace-title">{t("Crop & Fit")}</h1>
         <p className="workspace-description">
-          Upload a video, choose the aspect ratio you need, then crop it to fill the frame or fit it with a color or blurred background for different screens and social platforms.
+          {t("Upload a video, choose the aspect ratio you need, then crop it to fill the frame or fit it with a color or blurred background for different screens and social platforms.")}
         </p>
       </header>
 
@@ -89,8 +91,8 @@ export default function CropFitPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*"
-            title="Select video to reframe"
-            subtitle="Drag & drop or browse video file"
+            title={t("Select video to reframe")}
+            subtitle={t("Drag & drop or browse video file")}
           />
         ) : (
           <div className="workspace-section">
@@ -108,8 +110,8 @@ export default function CropFitPage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Rendering aspect ratio geometry"
-            subtitle={`Target ratio: ${aspectRatio} with ${fitMode === "crop" ? "center crop" : `fit (${backgroundType})`}...`}
+            title={t("Rendering aspect ratio geometry")}
+            subtitle={t("Target ratio: {ratio} with {mode}...", { ratio: aspectRatio, mode: t(fitMode === "crop" ? "center crop" : "fit ({background})", { background: t(backgroundType) }) })}
           />
         )}
 
@@ -118,29 +120,29 @@ export default function CropFitPage() {
             output={output}
             mediaType="video"
             onReset={resetJob}
-            title="Reframed video ready"
-            subtitle={`Preview your ${aspectRatio} video below or download the finished file.`}
+            title={t("Reframed video ready")}
+            subtitle={t("Preview your {ratio} video below or download the finished file.", { ratio: aspectRatio })}
             variant="crop-fit"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download video"
+            downloadLabel={t("Download video")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType="video"
-              title={`Reframed video (${aspectRatio})`}
+              title={t("Reframed video ({ratio})", { ratio: aspectRatio })}
             />
           </ResultPanel>
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
             {/* Aspect Ratio Selection */}
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Target Aspect Ratio</h2>
+              <h2 className="workspace-section-title">{t("Target Aspect Ratio")}</h2>
               <p className="workspace-section-subtitle">
-                Select your target canvas format.
+                {t("Select your target canvas format.")}
               </p>
               <AspectRatioSelector
                 value={aspectRatio}
@@ -150,16 +152,16 @@ export default function CropFitPage() {
 
             {/* Fit Mode Selection */}
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Framing Mode</h2>
+              <h2 className="workspace-section-title">{t("Framing Mode")}</h2>
               <p className="workspace-section-subtitle">
-                Choose how content aligns within the target aspect ratio.
+                {t("Choose how content aligns within the target aspect ratio.")}
               </p>
               <div className="option-cards-grid">
                 {FIT_MODES.map((mode) => (
                   <OptionCard
                     key={mode.id}
-                    title={mode.title}
-                    description={mode.desc}
+                    title={t(mode.title)}
+                    description={t(mode.desc)}
                     icon={mode.icon}
                     selected={fitMode === mode.id}
                     onClick={() => setFitMode(mode.id)}
@@ -171,17 +173,17 @@ export default function CropFitPage() {
             {/* Conditional Background Options for Fit Mode */}
             {fitMode === "fit" && (
               <div className="workspace-section">
-                <h2 className="workspace-section-title">Background Style</h2>
+                <h2 className="workspace-section-title">{t("Background Style")}</h2>
                 <p className="workspace-section-subtitle">
-                  Fill style for outer letterbox/pillarbox margins.
+                  {t("Fill style for outer letterbox/pillarbox margins.")}
                 </p>
 
                 <div className="option-cards-grid" style={{ marginBottom: "1rem" }}>
                   {BG_TYPES.map((bg) => (
                     <OptionCard
                       key={bg.id}
-                      title={bg.title}
-                      description={bg.desc}
+                      title={t(bg.title)}
+                      description={t(bg.desc)}
                       icon={bg.icon}
                       selected={backgroundType === bg.id}
                       trailing={bg.id === "color" ? (
@@ -199,7 +201,7 @@ export default function CropFitPage() {
                             }}
                             onChange={(event) => setBackgroundColor(event.target.value)}
                             className="background-color-input"
-                            aria-label="Choose background color"
+                            aria-label={t("Choose background color")}
                           />
                         </span>
                       ) : undefined}
@@ -224,7 +226,7 @@ export default function CropFitPage() {
                 disabled={!currentMedia}
               >
                 <Crop size={18} />
-                {currentMedia ? `Process Crop & Fit (${aspectRatio})` : "Upload a video to reframe"}
+                {currentMedia ? t("Process Crop & Fit ({ratio})", { ratio: aspectRatio }) : t("Upload a video to reframe")}
               </button>
             </div>
           </>

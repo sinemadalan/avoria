@@ -1,12 +1,14 @@
 import { Play, Volume2, Film } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 export default function MediaPreview({
   src,
   mediaType = "video",
-  title = "Media Preview",
+  title,
   onLoadedMetadata,
   aspectRatio,
 }) {
+  const { t } = useLanguage();
   if (!src) return null;
 
   const aspectRatioClass = {
@@ -20,9 +22,9 @@ export default function MediaPreview({
       <div className="media-preview-header">
         <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 500 }}>
           {mediaType === "video" ? <Film size={14} /> : <Volume2 size={14} />}
-          {title}
+          {title || t("Media Preview")}
         </span>
-        <span>Local Preview</span>
+        <span>{t("Local Preview")}</span>
       </div>
 
       {mediaType === "video" ? (
@@ -33,7 +35,7 @@ export default function MediaPreview({
           className="media-preview-element"
           onLoadedMetadata={onLoadedMetadata}
         >
-          Your browser does not support video playback.
+          {t("Your browser does not support video playback.")}
         </video>
       ) : (
         <div className="audio-preview-body">
@@ -43,7 +45,7 @@ export default function MediaPreview({
             className="audio-preview-element"
             onLoadedMetadata={onLoadedMetadata}
           >
-            Your browser does not support audio playback.
+            {t("Your browser does not support audio playback.")}
           </audio>
         </div>
       )}

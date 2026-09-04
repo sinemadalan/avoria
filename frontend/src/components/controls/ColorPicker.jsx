@@ -1,6 +1,9 @@
+import { useLanguage } from "../../context/LanguageContext.jsx";
+
 const PRESETS = ["#000000", "#16161A", "#1e293b", "#0f172a", "#ffffff"];
 
 export default function ColorPicker({ value = "#000000", onChange }) {
+  const { t } = useLanguage();
   const handleHexChange = (e) => {
     let val = e.target.value.trim();
     if (!val.startsWith("#")) val = "#" + val;
@@ -14,7 +17,7 @@ export default function ColorPicker({ value = "#000000", onChange }) {
         value={value.length === 7 ? value : "#000000"}
         onChange={(e) => onChange(e.target.value)}
         className="color-input-native"
-        aria-label="Select color"
+        aria-label={t("Select color")}
       />
       <input
         type="text"
@@ -23,7 +26,7 @@ export default function ColorPicker({ value = "#000000", onChange }) {
         maxLength={7}
         className="color-hex-text"
         placeholder="#000000"
-        aria-label="Hex color value"
+        aria-label={t("Hex color value")}
       />
       <div className="color-presets">
         {PRESETS.map((preset) => (
@@ -33,8 +36,8 @@ export default function ColorPicker({ value = "#000000", onChange }) {
             className="color-preset-btn"
             style={{ backgroundColor: preset }}
             onClick={() => onChange(preset)}
-            title={`Select ${preset}`}
-            aria-label={`Select preset color ${preset}`}
+            title={t("Select {color}", { color: preset })}
+            aria-label={t("Select preset color {color}", { color: preset })}
           />
         ))}
       </div>

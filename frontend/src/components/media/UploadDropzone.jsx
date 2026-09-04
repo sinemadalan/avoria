@@ -1,14 +1,21 @@
 import { useState, useRef } from "react";
 import { UploadCloud, Film, Loader2 } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 export default function UploadDropzone({
   onFileSelect,
   uploading = false,
   accept = "video/*,audio/*",
-  title = "Drop your media here",
-  subtitle = "or browse from your device",
-  hint = "Supports MP4, MOV, MKV, WebM, MP3, WAV, FLAC (up to 2GB)",
+  title,
+  subtitle,
+  hint,
 }) {
+  const { t } = useLanguage();
+  const resolvedTitle = title || t("Drop your media here");
+  const resolvedSubtitle = subtitle || t("or browse from your device");
+  const resolvedHint = hint === undefined
+    ? t("Supports MP4, MOV, MKV, WebM, MP3, WAV, FLAC (up to 2GB)")
+    : hint;
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef(null);
 
@@ -65,7 +72,7 @@ export default function UploadDropzone({
           inputRef.current?.click();
         }
       }}
-      aria-label="Upload dropzone"
+      aria-label={t("Upload dropzone")}
     >
       <input
         ref={inputRef}
@@ -87,12 +94,12 @@ export default function UploadDropzone({
       </div>
 
       <div className="dropzone-title">
-        {uploading ? "Uploading media..." : title}
+        {uploading ? t("Uploading media...") : resolvedTitle}
       </div>
       <div className="dropzone-subtitle">
-        {uploading ? "Please wait while your media is being uploaded" : subtitle}
+        {uploading ? t("Please wait while your media is being uploaded") : resolvedSubtitle}
       </div>
-      {hint && <div className="dropzone-hint">{hint}</div>}
+      {resolvedHint && <div className="dropzone-hint">{resolvedHint}</div>}
     </div>
   );
 }

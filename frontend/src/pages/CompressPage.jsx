@@ -10,6 +10,7 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const COMPRESSION_LEVELS = [
   {
@@ -36,6 +37,7 @@ const COMPRESSION_LEVELS = [
 ];
 
 export default function CompressPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -56,9 +58,9 @@ export default function CompressPage() {
   return (
     <div className="workspace compress-workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Compress Video</h1>
+        <h1 className="workspace-title">{t("Compress Video")}</h1>
         <p className="workspace-description">
-          Upload a video and choose a compression level to reduce its file size for easier storage or sharing. Avoria re-encodes the file and shows how much space you saved.
+          {t("Upload a video and choose a compression level to reduce its file size for easier storage or sharing. Avoria re-encodes the file and shows how much space you saved.")}
         </p>
       </header>
 
@@ -68,8 +70,8 @@ export default function CompressPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*"
-            title="Select video to compress"
-            subtitle="Drag & drop or browse high-resolution video"
+            title={t("Select video to compress")}
+            subtitle={t("Drag & drop or browse high-resolution video")}
           />
         ) : (
           <div className="workspace-section">
@@ -87,8 +89,8 @@ export default function CompressPage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Compressing video stream"
-            subtitle="Applying rate control and encoder optimization..."
+            title={t("Compressing video stream")}
+            subtitle={t("Applying rate control and encoder optimization...")}
           />
         )}
 
@@ -97,31 +99,31 @@ export default function CompressPage() {
             output={output}
             mediaType="video"
             onReset={resetJob}
-            title="Compressed video ready"
-            subtitle="Your new file is ready to download."
+            title={t("Compressed video ready")}
+            subtitle={t("Your new file is ready to download.")}
             variant="compression"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download video"
+            downloadLabel={t("Download video")}
           />
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Compression Preset</h2>
+              <h2 className="workspace-section-title">{t("Compression Preset")}</h2>
               <p className="workspace-section-subtitle">
-                Choose the desired balance between file size savings and visual fidelity.
+                {t("Choose the desired balance between file size savings and visual fidelity.")}
               </p>
 
               <div className="option-cards-grid">
                 {COMPRESSION_LEVELS.map((item) => (
                   <OptionCard
                     key={item.id}
-                    title={item.title}
-                    badge={item.badge}
-                    description={item.desc}
+                    title={t(item.title)}
+                    badge={t(item.badge)}
+                    description={t(item.desc)}
                     icon={item.icon}
                     selected={level === item.id}
                     onClick={() => setLevel(item.id)}
@@ -138,7 +140,7 @@ export default function CompressPage() {
                 disabled={!currentMedia}
               >
                 <Minimize2 size={18} />
-                {currentMedia ? "Compress Video" : "Upload a video to compress"}
+                {currentMedia ? t("Compress Video") : t("Upload a video to compress")}
               </button>
             </div>
           </>

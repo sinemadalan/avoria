@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export default function TimeInput({
   label,
   value,
@@ -6,13 +8,21 @@ export default function TimeInput({
   min = 0,
   step = 0.5,
 }) {
-  const handleChange = (e) => {
-    const num = parseFloat(e.target.value);
-    if (isNaN(num)) {
-      onChange(0);
-    } else {
-      onChange(Math.max(min, max !== undefined ? Math.min(max, num) : num));
+  const [draftValue, setDraftValue] = useState(String(value ?? ""));
+
+  useEffect(() => {
+    setDraftValue(String(value ?? ""));
+  }, [value]);
+
+  const commitValue = () => {
+    const parsedValue = Number(draftValue);
+    if (draftValue.trim() === "" || !Number.isFinite(parsedValue)) {
+      setDraftValue(String(value ?? ""));
+      return;
     }
+
+    setDraftValue(String(parsedValue));
+    onChange(parsedValue);
   };
 
   const formatSeconds = (sec) => {
@@ -37,8 +47,19 @@ export default function TimeInput({
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={handleChange}
+        value={draftValue}
+        onChange={(event) => setDraftValue(event.target.value)}
+        onBlur={commitValue}
+        onWheel={(event) => event.currentTarget.blur()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") {
+            setDraftValue(String(value ?? ""));
+            event.currentTarget.blur();
+          }
+        }}
         className="time-input-field"
         aria-label={label}
       />

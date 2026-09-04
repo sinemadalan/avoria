@@ -10,6 +10,7 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const AUDIO_FORMATS = [
   { id: "mp3", label: "MP3 Audio", badge: "Universal", desc: "Standard 320kbps MP3 compatible with every audio player." },
@@ -21,6 +22,7 @@ const AUDIO_FORMATS = [
 ];
 
 export default function ExtractAudioPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -40,9 +42,9 @@ export default function ExtractAudioPage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Extract Audio Track</h1>
+        <h1 className="workspace-title">{t("Extract Audio Track")}</h1>
         <p className="workspace-description">
-          Upload a video, choose MP3, WAV, FLAC, M4A, Opus or OGG, and extract its soundtrack as a separate audio file for listening, editing or reuse.
+          {t("Upload a video, choose MP3, WAV, FLAC, M4A, Opus or OGG, and extract its soundtrack as a separate audio file for listening, editing or reuse.")}
         </p>
       </header>
 
@@ -52,8 +54,8 @@ export default function ExtractAudioPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*"
-            title="Select video file"
-            subtitle="Drag & drop or browse video containing audio"
+            title={t("Select video file")}
+            subtitle={t("Drag & drop or browse video containing audio")}
           />
         ) : (
           <div className="workspace-section">
@@ -71,8 +73,8 @@ export default function ExtractAudioPage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Extracting audio track"
-            subtitle={`Transcoding audio stream to high-quality ${format.toUpperCase()}...`}
+            title={t("Extracting audio track")}
+            subtitle={t("Transcoding audio stream to high-quality {format}...", { format: format.toUpperCase() })}
           />
         )}
 
@@ -81,37 +83,37 @@ export default function ExtractAudioPage() {
             output={output}
             mediaType="audio"
             onReset={resetJob}
-            title="Audio extraction complete"
-            subtitle={`Listen to your extracted ${format.toUpperCase()} audio below or download the finished file.`}
+            title={t("Audio extraction complete")}
+            subtitle={t("Listen to your extracted {format} audio below or download the finished file.", { format: format.toUpperCase() })}
             variant="extract-audio"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download audio"
+            downloadLabel={t("Download audio")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType="audio"
-              title={`Extracted ${format.toUpperCase()} audio`}
+              title={t("Extracted {format} audio", { format: format.toUpperCase() })}
             />
           </ResultPanel>
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Output Audio Format</h2>
+              <h2 className="workspace-section-title">{t("Output Audio Format")}</h2>
               <p className="workspace-section-subtitle">
-                Choose the destination audio container and codec.
+                {t("Choose the destination audio container and codec.")}
               </p>
 
               <div className="option-cards-grid extract-audio-format-grid">
                 {AUDIO_FORMATS.map((item) => (
                   <OptionCard
                     key={item.id}
-                    title={item.label}
-                    badge={item.badge}
-                    description={item.desc}
+                    title={t(item.label)}
+                    badge={t(item.badge)}
+                    description={t(item.desc)}
                     selected={format === item.id}
                     onClick={() => setFormat(item.id)}
                   />
@@ -127,7 +129,7 @@ export default function ExtractAudioPage() {
                 disabled={!currentMedia}
               >
                 <Music size={18} />
-                {currentMedia ? `Extract as ${format.toUpperCase()}` : "Upload video to extract audio"}
+                {currentMedia ? t("Extract as {format}", { format: format.toUpperCase() }) : t("Upload video to extract audio")}
               </button>
             </div>
           </>

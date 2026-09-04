@@ -1,4 +1,5 @@
 import { Film, Music, RefreshCw } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 function formatFileSize(bytes) {
   if (!bytes) return "";
@@ -13,6 +14,7 @@ function formatFileSize(bytes) {
 }
 
 export default function MediaFileCard({ media, onChangeMedia }) {
+  const { t } = useLanguage();
   if (!media) return null;
 
   const isVideo = media.mediaType === "video";
@@ -26,12 +28,12 @@ export default function MediaFileCard({ media, onChangeMedia }) {
         </div>
         <div className="media-file-meta">
           <div className="media-file-name" title={media.originalFilename || media.file?.name}>
-            {media.originalFilename || media.file?.name || "Uploaded Media"}
+            {media.originalFilename || media.file?.name || t("Uploaded Media")}
           </div>
           <div className="media-file-details">
             <span>{formatFileSize(media.sizeBytes || media.file?.size)}</span>
             {durationSec ? <span>• {durationSec.toFixed(1)}s</span> : null}
-            <span>• {isVideo ? "Video" : "Audio"}</span>
+            <span>• {isVideo ? t("Video file") : t("Audio file")}</span>
           </div>
         </div>
       </div>
@@ -41,10 +43,10 @@ export default function MediaFileCard({ media, onChangeMedia }) {
           type="button"
           onClick={onChangeMedia}
           className="media-file-action"
-          aria-label="Change current media file"
+          aria-label={t("Change current media file")}
         >
           <RefreshCw size={12} style={{ display: "inline", marginRight: "4px" }} />
-          Change file
+          {t("Change file")}
         </button>
       )}
     </div>

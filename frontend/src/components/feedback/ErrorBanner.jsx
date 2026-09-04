@@ -1,17 +1,19 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 export default function ErrorBanner({
   message,
   onRetry,
-  title = "Processing Error",
+  title,
 }) {
+  const { t } = useLanguage();
   if (!message) return null;
 
   return (
     <div className="error-banner" role="alert">
       <AlertCircle size={20} style={{ flexShrink: 0, marginTop: "2px" }} />
       <div className="error-banner-content">
-        <div className="error-banner-title">{title}</div>
+        <div className="error-banner-title">{title || t("Processing Error")}</div>
         <p>{message}</p>
       </div>
       {onRetry && (
@@ -27,7 +29,7 @@ export default function ErrorBanner({
           }}
         >
           <RefreshCw size={12} />
-          Retry
+          {t("Retry")}
         </button>
       )}
     </div>

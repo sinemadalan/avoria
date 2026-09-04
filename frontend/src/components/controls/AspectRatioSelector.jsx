@@ -1,3 +1,5 @@
+import { useLanguage } from "../../context/LanguageContext.jsx";
+
 const BACKEND_RATIOS = [
   { id: "16:9", label: "16:9", sub: "Landscape (1920×1080)", w: 32, h: 18 },
   { id: "9:16", label: "9:16", sub: "Portrait (1080×1920)", w: 18, h: 32 },
@@ -6,8 +8,9 @@ const BACKEND_RATIOS = [
 ];
 
 export default function AspectRatioSelector({ value, onChange, options = BACKEND_RATIOS }) {
+  const { t } = useLanguage();
   return (
-    <div className="aspect-grid" role="radiogroup" aria-label="Aspect Ratio">
+    <div className="aspect-grid" role="radiogroup" aria-label={t("Aspect Ratio")}>
       {options.map((ratio) => {
         const isSelected = value === ratio.id;
         return (
@@ -27,8 +30,8 @@ export default function AspectRatioSelector({ value, onChange, options = BACKEND
                 color: isSelected ? "var(--accent-primary)" : "var(--text-muted)",
               }}
             />
-            <span className="aspect-label">{ratio.label}</span>
-            <span className="aspect-sub">{ratio.sub}</span>
+            <span className="aspect-label">{t(ratio.label)}</span>
+            <span className="aspect-sub">{t(ratio.sub)}</span>
           </button>
         );
       })}

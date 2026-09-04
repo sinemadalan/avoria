@@ -15,6 +15,55 @@
   min-width: 0;
   min-height: 100vh;
   overflow-y: auto;
+  position: relative;
+}
+
+.desktop-language-switcher {
+  position: absolute;
+  top: 1.15rem;
+  right: 1.5rem;
+  z-index: 20;
+}
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 34px;
+  padding: 0.25rem 0.45rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+}
+
+.language-switcher button {
+  padding: 0.28rem 0.4rem;
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.language-switcher button:hover,
+.language-switcher button.active {
+  color: #fff;
+  background: var(--accent-primary);
+}
+
+.language-switcher > span {
+  width: 1px;
+  height: 14px;
+  background: var(--border-medium);
+}
+
+.mobile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .app-content {
@@ -1334,6 +1383,10 @@
    ========================================================================== */
 
 @media (max-width: 900px) {
+  .desktop-language-switcher {
+    display: none;
+  }
+
   .sidebar {
     display: none;
   }
@@ -1517,16 +1570,17 @@
 }
 
 .home-hero-title {
-  max-width: 760px;
+  max-width: none;
   font-family: "Fraunces", Georgia, serif;
   color: var(--text-primary);
   background: none;
   -webkit-text-fill-color: currentColor;
-  font-size: clamp(2.9rem, 6vw, 3.75rem);
+  font-size: clamp(2.65rem, 5vw, 3.3rem);
   font-weight: 500;
   line-height: .99;
   letter-spacing: -.04em;
   margin-bottom: 1rem;
+  white-space: nowrap;
 }
 
 .home-hero-title em {
@@ -1712,6 +1766,7 @@
 
   .home-hero-title {
     font-size: 2.65rem;
+    white-space: normal;
   }
 }
 

@@ -11,6 +11,7 @@ import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getConversionOptions } from "../api/media.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const DEFAULT_CONTAINERS = [
   { id: "mp4", label: "MP4", desc: "Maximum compatibility across all devices and web platforms.", videoCodec: "h264", audioCodec: "aac", isAudioOnly: false },
@@ -26,6 +27,7 @@ const DEFAULT_CONTAINERS = [
 ];
 
 export default function ConvertPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -51,7 +53,8 @@ export default function ConvertPage() {
             return {
               id: c.id,
               label: c.id.toUpperCase(),
-              desc: `Extension: ${c.extension}, Codecs: ${displayCodecs.join(", ")}`,
+              desc: "Extension: {extension}, Codecs: {codecs}",
+              descVars: { extension: c.extension, codecs: displayCodecs.join(", ") },
               videoCodec: c.video_codecs?.[0] || "h264",
               audioCodec: c.audio_codecs?.[0] || "aac",
               isAudioOnly,
@@ -106,9 +109,9 @@ export default function ConvertPage() {
   return (
     <div className="workspace convert-workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Convert Video & Audio</h1>
+        <h1 className="workspace-title">{t("Convert Video & Audio")}</h1>
         <p className="workspace-description">
-          Upload a video or audio file and convert it to a compatible media container and codec without changing its original content or duration.
+          {t("Upload a video or audio file and convert it to a compatible media container and codec without changing its original content or duration.")}
         </p>
       </header>
 
@@ -119,8 +122,8 @@ export default function ConvertPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*,audio/*,.m4a,.aac,.flac,.ogg,.opus"
-            title="Select video or audio to convert"
-            subtitle="Video: MP4, MOV, MKV, WebM, AVI · Audio: MP3, WAV, M4A, AAC, FLAC, OGG, Opus"
+            title={t("Select video or audio to convert")}
+            subtitle={t("Video: MP4, MOV, MKV, WebM, AVI · Audio: MP3, WAV, M4A, AAC, FLAC, OGG, Opus")}
           />
         ) : (
           <div className="workspace-section">
@@ -139,8 +142,8 @@ export default function ConvertPage() {
         {/* Processing State */}
         {isProcessing && (
           <ProcessingState
-            title={`Converting your ${isAudioInput ? "audio" : "video"}`}
-            subtitle={`Transcoding to ${selectedContainer.toUpperCase()} (${videoCodec === "none" ? audioCodec.toUpperCase() : `${videoCodec.toUpperCase()}/${audioCodec.toUpperCase()}`})...`}
+            title={t(isAudioInput ? "Converting your audio file" : "Converting your video file")}
+            subtitle={t("Transcoding to {format} ({codecs})...", { format: selectedContainer.toUpperCase(), codecs: videoCodec === "none" ? audioCodec.toUpperCase() : `${videoCodec.toUpperCase()}/${audioCodec.toUpperCase()}` })}
           />
         )}
 
@@ -150,24 +153,24 @@ export default function ConvertPage() {
             output={output}
             mediaType={outputMediaType}
             onReset={resetJob}
-            title={`Your converted ${outputMediaType} is ready`}
-            subtitle="The new file is ready for playback, editing or sharing."
+            title={t(outputMediaType === "audio" ? "Your converted audio file is ready" : "Your converted video file is ready")}
+            subtitle={t("The new file is ready for playback, editing or sharing.")}
             variant="conversion"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel={`Download ${outputMediaType}`}
+            downloadLabel={t(outputMediaType === "audio" ? "Download audio file" : "Download video file")}
           />
         )}
 
         {/* Error Banner */}
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {/* Controls (always visible when not processing/completed) */}
         {!isProcessing && !isCompleted && (
           <>
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Target Container Format</h2>
+              <h2 className="workspace-section-title">{t("Target Container Format")}</h2>
               <p className="workspace-section-subtitle">
-                Select the format you want your {isAudioInput ? "audio" : "video"} saved as.
+                {t(isAudioInput ? "Select the format you want your audio file saved as." : "Select the format you want your video file saved as.")}
               </p>
 
               <div className="option-cards-grid">
@@ -175,7 +178,7 @@ export default function ConvertPage() {
                   <OptionCard
                     key={item.id}
                     title={item.label}
-                    description={item.desc}
+                    description={t(item.desc, item.descVars)}
                     selected={selectedContainer === item.id}
                     onClick={() => handleSelectContainer(item)}
                   />
@@ -191,7 +194,7 @@ export default function ConvertPage() {
                 disabled={!currentMedia}
               >
                 <RefreshCw size={18} />
-                {currentMedia ? `Convert to ${selectedContainer.toUpperCase()}` : "Upload video or audio to convert"}
+                {currentMedia ? t("Convert to {format}", { format: selectedContainer.toUpperCase() }) : t("Upload video or audio to convert")}
               </button>
             </div>
           </>

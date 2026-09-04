@@ -1,4 +1,5 @@
 import { CheckCircle2, Download, RefreshCw } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext.jsx";
 
 function formatBytes(bytes) {
   if (!bytes) return "0 B";
@@ -17,24 +18,25 @@ export default function ResultPanel({
   output,
   mediaType = "video",
   onReset,
-  title = "Your media is ready",
-  subtitle = "Your processed file is ready to use.",
+  title,
+  subtitle,
   downloadUrl,
-  downloadLabel = "Download file",
+  downloadLabel,
   variant = "default",
 }) {
+  const { t } = useLanguage();
   return (
-    <div className={`result-card ${variant !== "default" ? `${variant}-result-card` : ""}`} role="region" aria-label="Processing result">
+    <div className={`result-card ${variant !== "default" ? `${variant}-result-card` : ""}`} role="region" aria-label={t("Processing result")}>
       <div className="result-header">
         <div className="result-success-icon" aria-hidden="true">
           <CheckCircle2 size={20} />
         </div>
         <div>
           <h2 className="result-title">
-            {title}
+            {title || t("Your media is ready")}
           </h2>
           <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
-            {subtitle}
+            {subtitle || t("Your processed file is ready to use.")}
           </p>
         </div>
       </div>
@@ -46,19 +48,19 @@ export default function ResultPanel({
         <div className="result-metrics-grid">
           {output.original_size && (
             <div className="result-metric-item">
-              <span className="result-metric-label">Original Size</span>
+              <span className="result-metric-label">{t("Original Size")}</span>
               <span className="result-metric-value">{formatBytes(output.original_size)}</span>
             </div>
           )}
           {output.compressed_size && (
             <div className="result-metric-item">
-              <span className="result-metric-label">Processed Size</span>
+              <span className="result-metric-label">{t("Processed Size")}</span>
               <span className="result-metric-value">{formatBytes(output.compressed_size)}</span>
             </div>
           )}
           {output.reduction_percentage !== undefined && output.reduction_percentage !== null && (
             <div className="result-metric-item">
-              <span className="result-metric-label">Reduction</span>
+              <span className="result-metric-label">{t("Reduction")}</span>
               <span className="result-metric-value" style={{ color: "var(--success)" }}>
                 {output.reduction_percentage.toFixed(1)}%
               </span>
@@ -72,7 +74,7 @@ export default function ResultPanel({
         {downloadUrl && (
           <a href={downloadUrl} download className="action-btn-primary result-download-button">
             <Download size={16} />
-            {downloadLabel}
+            {downloadLabel || t("Download file")}
           </a>
         )}
         <button
@@ -81,7 +83,7 @@ export default function ResultPanel({
           className="action-btn-secondary result-reset-button"
         >
           <RefreshCw size={16} />
-          Process another file
+          {t("Process another file")}
         </button>
       </div>
     </div>

@@ -10,8 +10,10 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 export default function VolumePage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
@@ -32,9 +34,9 @@ export default function VolumePage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Adjust Audio Volume</h1>
+        <h1 className="workspace-title">{t("Adjust Audio Volume")}</h1>
         <p className="workspace-description">
-          Upload a video or audio file and set the volume from 0% to 200% to mute, lower or boost its sound, then export a new file at your chosen level.
+          {t("Upload a video or audio file and set the volume from 0% to 200% to mute, lower or boost its sound, then export a new file at your chosen level.")}
         </p>
       </header>
 
@@ -44,8 +46,8 @@ export default function VolumePage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*,.mp3,.wav,.m4a,.flac,.ogg,.opus"
-            title="Select video or audio file"
-            subtitle="Drag & drop or browse media file"
+            title={t("Select video or audio file")}
+            subtitle={t("Drag & drop or browse media file")}
           />
         ) : (
           <div className="workspace-section">
@@ -63,8 +65,8 @@ export default function VolumePage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Adjusting audio gain"
-            subtitle={`Applying ${volumePercent}% gain multiplier...`}
+            title={t("Adjusting audio gain")}
+            subtitle={t("Applying {volume}% gain multiplier...", { volume: volumePercent })}
           />
         )}
 
@@ -73,26 +75,26 @@ export default function VolumePage() {
             output={output}
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
-            title="Volume adjustment complete"
-            subtitle={`Preview your ${volumePercent}% volume result below or download the finished file.`}
+            title={t("Volume adjustment complete")}
+            subtitle={t("Preview your {volume}% volume result below or download the finished file.", { volume: volumePercent })}
             variant="volume"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel={`Download ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+            downloadLabel={t(currentMedia?.mediaType === "audio" ? "Download audio file" : "Download video file")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType={currentMedia?.mediaType || "video"}
-              title={`${volumePercent}% volume ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+              title={t("{volume}% volume {type}", { volume: volumePercent, type: t(currentMedia?.mediaType === "audio" ? "Audio file" : "Video file").toLocaleLowerCase() })}
             />
           </ResultPanel>
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Gain Multiplier</h2>
+              <h2 className="workspace-section-title">{t("Gain Multiplier")}</h2>
               <VolumeSlider
                 value={volumePercent}
                 onChange={setVolumePercent}
@@ -110,7 +112,7 @@ export default function VolumePage() {
                 disabled={!currentMedia}
               >
                 <Volume2 size={18} />
-                {currentMedia ? `Set Volume to ${volumePercent}%` : "Upload media to adjust volume"}
+                {currentMedia ? t("Set Volume to {volume}%", { volume: volumePercent }) : t("Upload media to adjust volume")}
               </button>
             </div>
           </>

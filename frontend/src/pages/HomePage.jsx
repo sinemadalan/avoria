@@ -18,6 +18,7 @@ import MediaPreview from "../components/media/MediaPreview.jsx";
 import MediaFileCard from "../components/media/MediaFileCard.jsx";
 import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const VIDEO_TOOLS = [
   {
@@ -86,6 +87,7 @@ const AUDIO_TOOLS = [
 ];
 
 export default function HomePage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error } = useMediaUpload();
   const fileInputRef = useRef(null);
 
@@ -100,10 +102,10 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <section className="home-hero">
-        <div className="home-eyebrow"><span /> Your complete media workspace</div>
-        <h1 className="home-hero-title">Every media tool you need.<br /><em>None of the complexity.</em></h1>
+        <div className="home-eyebrow"><span /> {t("Your complete media workspace")}</div>
+        <h1 className="home-hero-title">{t("Every media tool you need.")}<br /><em>{t("None of the complexity.")}</em></h1>
         <p className="home-hero-desc">
-          Convert, compress, trim, crop, merge, fine-tune video and audio — all from one fast, focused workspace.
+          {t("Convert, compress, trim, crop, merge, fine-tune video and audio — all from one fast, focused workspace.")}
         </p>
         {!currentMedia && (
           <>
@@ -121,7 +123,7 @@ export default function HomePage() {
               disabled={uploading}
             >
               <UploadCloud size={18} />
-              {uploading ? "Uploading..." : "Start with a video"}
+              {uploading ? t("Uploading...") : t("Start with a video")}
             </button>
           </>
         )}
@@ -140,7 +142,7 @@ export default function HomePage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 500 }}>
-                Active media in workspace:
+                {t("Active media in workspace:")}
               </span>
             </div>
             <MediaFileCard
@@ -159,8 +161,8 @@ export default function HomePage() {
       {/* Video Workspaces */}
       <section style={{ marginBottom: "2.5rem" }}>
         <div className="home-section-heading">
-          <div><span className="home-section-kicker">Video</span><h2>Make every frame count.</h2></div>
-          <span>{VIDEO_TOOLS.length} tools</span>
+          <div><span className="home-section-kicker">{t("Video")}</span><h2>{t("Make every frame count.")}</h2></div>
+          <span>{t("{count} tools", { count: VIDEO_TOOLS.length })}</span>
         </div>
 
         <div className="home-tools-grid video-tools-grid">
@@ -173,11 +175,11 @@ export default function HomePage() {
                     <Icon size={20} />
                   </div>
                   <div className="home-tool-card-title">
-                    {tool.title}
+                    {t(tool.title)}
                     <ArrowRight size={16} color="var(--text-muted)" />
                   </div>
                 </div>
-                <p className="home-tool-card-desc">{tool.desc}</p>
+                <p className="home-tool-card-desc">{t(tool.desc)}</p>
               </Link>
             );
           })}
@@ -187,8 +189,8 @@ export default function HomePage() {
       {/* Audio Workspaces */}
       <section>
         <div className="home-section-heading">
-          <div><span className="home-section-kicker">Audio</span><h2>Sound exactly right.</h2></div>
-          <span>{AUDIO_TOOLS.length} tools</span>
+          <div><span className="home-section-kicker">{t("Audio")}</span><h2>{t("Sound exactly right.")}</h2></div>
+          <span>{t("{count} tools", { count: AUDIO_TOOLS.length })}</span>
         </div>
 
         <div className="home-tools-grid audio-tools-grid">
@@ -201,11 +203,11 @@ export default function HomePage() {
                     <Icon size={20} />
                   </div>
                   <div className="home-tool-card-title">
-                    {tool.title}
+                    {t(tool.title)}
                     <ArrowRight size={16} color="var(--text-muted)" />
                   </div>
                 </div>
-                <p className="home-tool-card-desc">{tool.desc}</p>
+                <p className="home-tool-card-desc">{t(tool.desc)}</p>
               </Link>
             );
           })}

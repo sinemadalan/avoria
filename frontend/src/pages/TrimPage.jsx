@@ -10,14 +10,17 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { useMediaUpload } from "../hooks/useMediaUpload.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 export default function TrimPage() {
+  const { t } = useLanguage();
   const { currentMedia, upload, uploading, clearCurrentMedia, error: uploadError } = useMediaUpload();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [duration, setDuration] = useState(60);
   const [startSeconds, setStartSeconds] = useState(0);
   const [endSeconds, setEndSeconds] = useState(1);
+  const [validationErrorKey, setValidationErrorKey] = useState(null);
 
   useEffect(() => {
     const dur = currentMedia?.metadata?.format?.duration_seconds;
@@ -40,9 +43,27 @@ export default function TrimPage() {
   const handleProcess = async () => {
     if (!currentMedia?.mediaId) return;
 
-    if (startSeconds >= endSeconds) {
+    if (startSeconds < 0 || endSeconds < 0) {
+      setValidationErrorKey("Start and end times must be zero or greater.");
       return;
     }
+
+    if (startSeconds >= endSeconds) {
+      setValidationErrorKey("End timestamp must be strictly greater than start timestamp.");
+      return;
+    }
+
+    if (startSeconds >= duration) {
+      setValidationErrorKey("Start time must be less than the media duration ({duration}s).");
+      return;
+    }
+
+    if (endSeconds > duration + 0.001) {
+      setValidationErrorKey("End time cannot exceed the media duration ({duration}s).");
+      return;
+    }
+
+    setValidationErrorKey(null);
 
     await submitAndTrack({
       media_id: currentMedia.mediaId,
@@ -59,9 +80,9 @@ export default function TrimPage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Trim Media</h1>
+        <h1 className="workspace-title">{t("Trim Media")}</h1>
         <p className="workspace-description">
-          Upload a video or audio file, enter exact start and end times, and export only the section you want without keeping the unwanted beginning or ending.
+          {t("Upload a video or audio file, enter exact start and end times, and export only the section you want without keeping the unwanted beginning or ending.")}
         </p>
       </header>
 
@@ -71,8 +92,8 @@ export default function TrimPage() {
             onFileSelect={upload}
             uploading={uploading}
             accept="video/*,audio/*"
-            title="Select video or audio to trim"
-            subtitle="Drag & drop or browse media file"
+            title={t("Select video or audio to trim")}
+            subtitle={t("Drag & drop or browse media file")}
           />
         ) : (
           <div className="workspace-section">
@@ -91,8 +112,8 @@ export default function TrimPage() {
 
         {isProcessing && (
           <ProcessingState
-            title="Trimming media track"
-            subtitle={`Cutting from ${startSeconds.toFixed(1)}s to ${endSeconds.toFixed(1)}s...`}
+            title={t("Trimming media track")}
+            subtitle={t("Cutting from {start}s to {end}s...", { start: startSeconds.toFixed(1), end: endSeconds.toFixed(1) })}
           />
         )}
 
@@ -101,21 +122,21 @@ export default function TrimPage() {
             output={output}
             mediaType={currentMedia?.mediaType || "video"}
             onReset={resetJob}
-            title="Trimmed media ready"
-            subtitle="Preview your selected clip below or download the finished file."
+            title={t("Trimmed media ready")}
+            subtitle={t("Preview your selected clip below or download the finished file.")}
             variant="trim"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download media"
+            downloadLabel={t("Download media")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType={currentMedia?.mediaType || "video"}
-              title={`Trimmed ${currentMedia?.mediaType === "audio" ? "audio" : "video"}`}
+              title={t("Trimmed {type}", { type: t(currentMedia?.mediaType === "audio" ? "Audio file" : "Video file").toLocaleLowerCase() })}
             />
           </ResultPanel>
         )}
 
-        {(uploadError || error) && <ErrorBanner title={uploadError ? "Upload Error" : "Processing Error"} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
+        {(uploadError || error) && <ErrorBanner title={t(uploadError ? "Upload Error" : "Processing Error")} message={uploadError || error} onRetry={error ? handleProcess : undefined} />}
 
         {!isProcessing && !isCompleted && (
           <>
@@ -123,33 +144,39 @@ export default function TrimPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h2 className="workspace-section-title">
                   <Clock size={16} color="var(--accent-primary)" />
-                  Cut Boundaries
+                  {t("Cut Boundaries")}
                 </h2>
                 <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                  Output Duration: <strong style={{ color: "var(--accent-primary)" }}>{trimmedLength.toFixed(1)}s</strong>
+                  {t("Output Duration:")} <strong style={{ color: "var(--accent-primary)" }}>{trimmedLength.toFixed(1)}s</strong>
                 </span>
               </div>
 
               <div className="time-inputs-row">
                 <TimeInput
-                  label="Start Timestamp (seconds)"
+                  label={t("Start Timestamp (seconds)")}
                   value={startSeconds}
-                  onChange={setStartSeconds}
+                  onChange={(nextValue) => {
+                    setStartSeconds(nextValue);
+                    setValidationErrorKey(null);
+                  }}
                   min={0}
-                  max={endSeconds - 0.1}
+                  max={duration}
                 />
                 <TimeInput
-                  label="End Timestamp (seconds)"
+                  label={t("End Timestamp (seconds)")}
                   value={endSeconds}
-                  onChange={setEndSeconds}
-                  min={startSeconds + 0.1}
+                  onChange={(nextValue) => {
+                    setEndSeconds(nextValue);
+                    setValidationErrorKey(null);
+                  }}
+                  min={0}
                   max={duration}
                 />
               </div>
 
-              {startSeconds >= endSeconds && (
+              {validationErrorKey && (
                 <p style={{ color: "var(--danger)", fontSize: "0.8rem" }}>
-                  End timestamp must be strictly greater than start timestamp.
+                  {t(validationErrorKey, { duration: duration.toFixed(3) })}
                 </p>
               )}
             </div>
@@ -159,10 +186,10 @@ export default function TrimPage() {
                 type="button"
                 className="action-btn-primary"
                 onClick={handleProcess}
-                disabled={!currentMedia || startSeconds >= endSeconds}
+                disabled={!currentMedia}
               >
                 <Scissors size={18} />
-                {currentMedia ? `Trim Media (${trimmedLength.toFixed(1)}s)` : "Upload media to trim"}
+                {currentMedia ? t("Trim Media ({duration}s)", { duration: trimmedLength.toFixed(1) }) : t("Upload media to trim")}
               </button>
             </div>
           </>

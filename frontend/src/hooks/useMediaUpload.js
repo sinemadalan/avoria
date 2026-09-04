@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { uploadMedia, inspectMedia } from "../api/media.js";
 import { useMediaContext } from "../context/MediaContext.jsx";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const ALLOWED_EXTENSIONS = [
   ".mp4", ".mov", ".mkv", ".webm", ".avi",
@@ -10,20 +11,21 @@ const ALLOWED_EXTENSIONS = [
 const MAX_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 
 export function useMediaUpload() {
+  const { t } = useLanguage();
   const { currentMedia, setCurrentMedia, clearCurrentMedia } = useMediaContext();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
 
   const validateFile = (file) => {
     if (!file) {
-      throw new Error("Please select a file to upload.");
+      throw new Error(t("Please select a file to upload."));
     }
     const ext = "." + file.name.split(".").pop().toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      throw new Error(`Unsupported file type (${ext}). Allowed: MP4, MOV, MKV, WebM, MP3, WAV, FLAC, etc.`);
+      throw new Error(t("Unsupported file type ({ext}). Allowed: MP4, MOV, MKV, WebM, MP3, WAV, FLAC, etc.", { ext }));
     }
     if (file.size > MAX_SIZE_BYTES) {
-      throw new Error("File exceeds maximum allowed size (2GB).");
+      throw new Error(t("File exceeds maximum allowed size (2GB)."));
     }
   };
 
@@ -62,13 +64,13 @@ export function useMediaUpload() {
         setCurrentMedia(mediaObj);
         return mediaObj;
       } catch (err) {
-        setError(err.message || "Failed to upload media file.");
+        setError(err.message || t("Failed to upload media file."));
         throw err;
       } finally {
         setUploading(false);
       }
     },
-    [setCurrentMedia]
+    [setCurrentMedia, t]
   );
 
   return {

@@ -9,6 +9,7 @@ import ErrorBanner from "../components/feedback/ErrorBanner.jsx";
 import { uploadMedia } from "../api/media.js";
 import { getJobDownloadUrl } from "../api/jobs.js";
 import { useJobPolling } from "../hooks/useJobPolling.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const MERGE_RATIOS = [
   { id: "first_video", label: "First Video", sub: "Match 1st Clip", w: 26, h: 20 },
@@ -19,6 +20,7 @@ const MERGE_RATIOS = [
 ];
 
 export default function MergePage() {
+  const { t } = useLanguage();
   const { jobId, submitAndTrack, status, isProcessing, isCompleted, output, error, resetJob } = useJobPolling();
 
   const [videoList, setVideoList] = useState([]);
@@ -40,7 +42,7 @@ export default function MergePage() {
 
       setVideoList((prev) => [...prev, newVideo]);
     } catch (err) {
-      setUploadError(err.message || "Failed to upload video.");
+      setUploadError(err.message || t("Failed to upload video."));
     } finally {
       setUploading(false);
     }
@@ -87,19 +89,19 @@ export default function MergePage() {
   return (
     <div className="workspace">
       <header className="workspace-header">
-        <h1 className="workspace-title">Merge Videos</h1>
+        <h1 className="workspace-title">{t("Merge Videos")}</h1>
         <p className="workspace-description">
-          Upload two or more video clips, arrange them in the order you want, select a shared canvas ratio, and combine them into one continuous video file.
+          {t("Upload two or more video clips, arrange them in the order you want, select a shared canvas ratio, and combine them into one continuous video file.")}
         </p>
       </header>
 
       <div className="workspace-body">
-        {uploadError && <ErrorBanner title="Upload Error" message={uploadError} />}
+        {uploadError && <ErrorBanner title={t("Upload Error")} message={uploadError} />}
 
         {isProcessing && (
           <ProcessingState
-            title="Concatenating video sequences"
-            subtitle={`Harmonizing ${videoList.length} clips to ${targetAspectRatio} aspect ratio...`}
+            title={t("Concatenating video sequences")}
+            subtitle={t("Harmonizing {count} clips to {ratio} aspect ratio...", { count: videoList.length, ratio: targetAspectRatio })}
           />
         )}
 
@@ -111,16 +113,16 @@ export default function MergePage() {
               resetJob();
               setVideoList([]);
             }}
-            title="Merged video ready"
-            subtitle="Preview your combined video below or download the finished file."
+            title={t("Merged video ready")}
+            subtitle={t("Preview your combined video below or download the finished file.")}
             variant="merge"
             downloadUrl={getJobDownloadUrl(jobId)}
-            downloadLabel="Download video"
+            downloadLabel={t("Download video")}
           >
             <MediaPreview
               src={getJobDownloadUrl(jobId)}
               mediaType="video"
-              title="Merged video"
+              title={t("Merged video")}
               aspectRatio={targetAspectRatio}
             />
           </ResultPanel>
@@ -135,10 +137,10 @@ export default function MergePage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h2 className="workspace-section-title">
                   <Film size={16} color="var(--accent-primary)" />
-                  Video Playlist ({videoList.length})
+                  {t("Video Playlist ({count})", { count: videoList.length })}
                 </h2>
                 <span style={{ fontSize: "0.8rem", color: videoList.length < 2 ? "var(--warning)" : "var(--success)" }}>
-                  {videoList.length < 2 ? "Minimum 2 videos required" : "Ready to merge"}
+                  {t(videoList.length < 2 ? "Minimum 2 videos required" : "Ready to merge")}
                 </span>
               </div>
 
@@ -155,7 +157,7 @@ export default function MergePage() {
                           className="merge-btn-small"
                           onClick={() => handleMoveUp(idx)}
                           disabled={idx === 0}
-                          aria-label="Move clip up"
+                          aria-label={t("Move clip up")}
                         >
                           <ArrowUp size={14} />
                         </button>
@@ -164,7 +166,7 @@ export default function MergePage() {
                           className="merge-btn-small"
                           onClick={() => handleMoveDown(idx)}
                           disabled={idx === videoList.length - 1}
-                          aria-label="Move clip down"
+                          aria-label={t("Move clip down")}
                         >
                           <ArrowDown size={14} />
                         </button>
@@ -172,7 +174,7 @@ export default function MergePage() {
                           type="button"
                           className="merge-btn-small merge-btn-remove"
                           onClick={() => handleRemove(idx)}
-                          aria-label="Remove clip"
+                          aria-label={t("Remove clip")}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -182,7 +184,7 @@ export default function MergePage() {
                 </div>
               ) : (
                 <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-                  No videos added yet. Upload at least 2 videos below.
+                  {t("No videos added yet. Upload at least 2 videos below.")}
                 </p>
               )}
             </div>
@@ -193,16 +195,16 @@ export default function MergePage() {
                 onFileSelect={handleAddVideo}
                 uploading={uploading}
                 accept="video/*"
-                title={videoList.length === 0 ? "Add your first video clip" : "Add another video clip"}
-                subtitle="Upload clips in order or rearrange them using controls above"
+                title={t(videoList.length === 0 ? "Add your first video clip" : "Add another video clip")}
+                subtitle={t("Upload clips in order or rearrange them using controls above")}
               />
             </div>
 
             {/* Aspect Ratio Setting */}
             <div className="workspace-section">
-              <h2 className="workspace-section-title">Output Canvas Aspect Ratio</h2>
+              <h2 className="workspace-section-title">{t("Output Canvas Aspect Ratio")}</h2>
               <p className="workspace-section-subtitle">
-                Normalize merged clips to a uniform aspect ratio.
+                {t("Normalize merged clips to a uniform aspect ratio.")}
               </p>
               <AspectRatioSelector
                 value={targetAspectRatio}
@@ -221,8 +223,8 @@ export default function MergePage() {
               >
                 <Layers size={18} />
                 {videoList.length >= 2
-                  ? `Merge ${videoList.length} Videos`
-                  : "Upload at least 2 videos to merge"}
+                  ? t("Merge {count} Videos", { count: videoList.length })
+                  : t("Upload at least 2 videos to merge")}
               </button>
             </div>
           </>
