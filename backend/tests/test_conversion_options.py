@@ -36,7 +36,6 @@ def options_client(tmp_path: Path) -> Iterator[tuple[TestClient, dict[str, Stati
         storage_root=tmp_path / "media",
         upload_directory=tmp_path / "uploads",
         output_directory=tmp_path / "outputs",
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
         log_directory=tmp_path / "logs",
     )
     detector_holder = {

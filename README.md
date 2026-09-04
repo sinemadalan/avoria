@@ -203,7 +203,7 @@ backend/app/processing      FFmpeg and FFprobe processing services
 backend/app/workers         Celery task orchestration
 backend/tests               Backend tests
 frontend                    React/Vite client
-data                        Local uploads, outputs, logs, and SQLite data
+data                        Local uploads, outputs, and logs
 ```
 
 ## Tests

@@ -21,7 +21,6 @@ def upload_client(tmp_path: Path) -> Iterator[tuple[TestClient, Path]]:
         upload_directory=upload_directory,
         max_upload_size_bytes=1024,
         upload_chunk_size_bytes=4,
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
         log_directory=tmp_path / "logs",
     )
     app.dependency_overrides[get_settings] = lambda: settings
@@ -107,7 +106,6 @@ def test_rejects_upload_over_size_limit_without_partial_file(
         upload_directory=upload_directory,
         max_upload_size_bytes=5,
         upload_chunk_size_bytes=4,
-        database_url=f"sqlite+aiosqlite:///{(upload_directory.parent / 'test.db').as_posix()}",
         log_directory=upload_directory.parent / "logs",
     )
 

@@ -293,7 +293,6 @@ def inspection_client(
         _env_file=None,
         storage_root=tmp_path / "media",
         upload_directory=upload_directory,
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
         log_directory=tmp_path / "logs",
     )
     inspector_holder = {"value": StubInspector(parse_ffprobe_payload(VIDEO_AUDIO_PAYLOAD))}

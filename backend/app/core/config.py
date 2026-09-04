@@ -21,7 +21,6 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
-    database_url: str = f"sqlite+aiosqlite:///{(PROJECT_ROOT / 'data' / 'avoria.db').as_posix()}"
     celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
     celery_result_backend: str = "rpc://"
     celery_task_default_queue: str = "media"

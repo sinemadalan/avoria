@@ -64,7 +64,6 @@ def jobs_client(
         storage_root=tmp_path / "media",
         upload_directory=upload_directory,
         output_directory=output_directory,
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
         log_directory=tmp_path / "logs",
     )
     queue = FakeJobQueue()
