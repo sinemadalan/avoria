@@ -130,7 +130,7 @@ export default function MutePage() {
               disabled={!currentMedia}
             >
               <VolumeX size={18} />
-              {currentMedia ? t("Mute and Export Video") : t("Upload video to mute")}
+              {currentMedia ? t("Mute Video") : t("Upload video to mute")}
             </button>
           </div>
         )}

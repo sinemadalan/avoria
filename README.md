@@ -15,6 +15,8 @@ processing jobs run asynchronously in a separate worker.
 - Playback speed adjustment
 - Preset crop and fit
 - Ordered multi-video merge with normalization
+- Turkish and English interface with light and dark themes
+- Home-page quick start and step-by-step video/audio tool guides
 
 ## Requirements
 
